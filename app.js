@@ -1,431 +1,562 @@
-/* FinanzasPro AR - Vanilla JS
-   - Guarda en localStorage
-   - Cuotas generan N registros mensuales
-   - UI: Dashboard + Mi Mes + Modal
-   - Incluye eliminar movimientos desde "Mi Mes"
-*/
+/* =========================
+   FinanzasPro AR - Vanilla
+   ========================= */
 
 const STORAGE_KEY = "finanzaspro_ar_movements_v1";
-const ENABLE_SEED = true; // <- ponelo en false si no querés movimientos de ejemplo
+const ENABLE_SEED = true; // <- ponelo en false para que no cree ejemplos
 
-// ---------- Helpers ----------
-function $(sel) { return document.querySelector(sel); }
-function moneyARS(n) {
-  const val = Number(n || 0);
-  return val.toLocaleString("es-AR", { style: "currency", currency: "ARS", maximumFractionDigits: 2 });
-}
-function monthToLabel(yyyyMm) {
-  if (!yyyyMm) return "—";
+// Categorías separadas
+const EXPENSE_CATEGORIES = [
+  "Consumo General",
+  "Gasto Fijo (Alquiler/Servicios)",
+  "Tarjeta de Crédito",
+  "Préstamo Personal",
+];
+
+const INCOME_CATEGORIES = [
+  "Sueldo",
+  "Cliente",
+  "Extra",
+];
+
+// Utilidades de fecha
+function monthAdd(yyyyMm, offset) {
   const [y, m] = yyyyMm.split("-").map(Number);
   const d = new Date(y, m - 1, 1);
-  return d.toLocaleDateString("es-AR", { month: "long", year: "numeric" });
-}
-function addMonths(yyyyMm, add) {
-  const [y, m] = yyyyMm.split("-").map(Number);
-  const d = new Date(y, (m - 1) + add, 1);
+  d.setMonth(d.getMonth() + offset);
   const yy = d.getFullYear();
   const mm = String(d.getMonth() + 1).padStart(2, "0");
   return `${yy}-${mm}`;
 }
+
+function monthLabel(yyyyMm) {
+  const [y, m] = yyyyMm.split("-").map(Number);
+  const d = new Date(y, m - 1, 1);
+  const fmt = new Intl.DateTimeFormat("es-AR", { month: "long", year: "numeric" });
+  // "febrero de 2026"
+  return fmt.format(d);
+}
+
+function moneyARS(n) {
+  const val = Number(n || 0);
+  return val.toLocaleString("es-AR", { style: "currency", currency: "ARS" });
+}
+
 function uid() {
   if (typeof crypto !== "undefined" && crypto.randomUUID) return crypto.randomUUID();
   return "id-" + Math.random().toString(16).slice(2) + "-" + Date.now();
 }
 
-// ---------- State ----------
-let selectedMonth = "";
-let modalType = "gasto"; // 'gasto' | 'ingreso'
+/* =========================
+   State
+   ========================= */
+let selectedMonth = getCurrentMonth();
+let movements = loadMovements();
 
-// ---------- Storage ----------
-function loadMovements() {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    const arr = raw ? JSON.parse(raw) : [];
-    return Array.isArray(arr) ? arr : [];
-  } catch {
-    return [];
+/* =========================
+   DOM refs
+   ========================= */
+const el = {
+  tabDashboard: document.getElementById("tabDashboard"),
+  tabMiMes: document.getElementById("tabMiMes"),
+  viewDashboard: document.getElementById("viewDashboard"),
+  viewMiMes: document.getElementById("viewMiMes"),
+
+  monthPicker: document.getElementById("monthPicker"),
+  selectedMonthLabel: document.getElementById("selectedMonthLabel"),
+
+  dashRemaining: document.getElementById("dashRemaining"),
+  dashIncome: document.getElementById("dashIncome"),
+  dashExpense: document.getElementById("dashExpense"),
+  dashPaidInfo: document.getElementById("dashPaidInfo"),
+
+  projectionGrid: document.getElementById("projectionGrid"),
+
+  monthIncomeTotal: document.getElementById("monthIncomeTotal"),
+  monthExpenseTotal: document.getElementById("monthExpenseTotal"),
+  monthIncomeBody: document.getElementById("monthIncomeBody"),
+  monthExpenseBody: document.getElementById("monthExpenseBody"),
+
+  btnOpenModal: document.getElementById("btnOpenModal"),
+  fabOpenModal: document.getElementById("fabOpenModal"),
+  btnImportPdf: document.getElementById("btnImportPdf"),
+
+  modalOverlay: document.getElementById("modalOverlay"),
+  btnCloseModal: document.getElementById("btnCloseModal"),
+  tabExpense: document.getElementById("tabExpense"),
+  tabIncome: document.getElementById("tabIncome"),
+
+  form: document.getElementById("movementForm"),
+  movementDesc: document.getElementById("movementDesc"),
+  movementAmount: document.getElementById("movementAmount"),
+  amountLabel: document.getElementById("amountLabel"),
+  movementMonth: document.getElementById("movementMonth"),
+  movementCategory: document.getElementById("movementCategory"),
+
+  installmentsBlock: document.getElementById("installmentsBlock"),
+  installmentsInput: document.getElementById("installmentsInput"),
+  installmentsMath: document.getElementById("installmentsMath"),
+  installmentsHint: document.getElementById("installmentsHint"),
+};
+
+/* =========================
+   Init
+   ========================= */
+initSeedIfNeeded();
+initProjectionPlaceholders();
+initUI();
+renderAll();
+
+/* =========================
+   UI Init
+   ========================= */
+function initUI() {
+  // Month picker initial
+  el.monthPicker.value = selectedMonth;
+  el.selectedMonthLabel.textContent = monthLabel(selectedMonth);
+
+  // Tabs view
+  el.tabDashboard.addEventListener("click", () => setView("dashboard"));
+  el.tabMiMes.addEventListener("click", () => setView("mimes"));
+
+  // Month change
+  el.monthPicker.addEventListener("change", (e) => {
+    selectedMonth = e.target.value || getCurrentMonth();
+    el.selectedMonthLabel.textContent = monthLabel(selectedMonth);
+    // sincronizar mes inicio del modal
+    el.movementMonth.value = selectedMonth;
+    renderAll();
+  });
+
+  // Open modal buttons
+  el.btnOpenModal.addEventListener("click", openModal);
+  el.fabOpenModal.addEventListener("click", openModal);
+
+  // Close modal
+  el.btnCloseModal.addEventListener("click", closeModal);
+  el.modalOverlay.addEventListener("click", (e) => {
+    if (e.target === el.modalOverlay) closeModal();
+  });
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && !el.modalOverlay.classList.contains("hidden")) closeModal();
+  });
+
+  // Modal tabs
+  el.tabExpense.addEventListener("click", () => setModalType("expense"));
+  el.tabIncome.addEventListener("click", () => setModalType("income"));
+
+  // Category change
+  el.movementCategory.addEventListener("change", updateInstallmentsVisibility);
+
+  // Installments math updates
+  el.movementAmount.addEventListener("input", updateInstallmentsMath);
+  el.installmentsInput.addEventListener("input", () => {
+    if (Number(el.installmentsInput.value) < 1) el.installmentsInput.value = 1;
+    updateInstallmentsMath();
+  });
+  el.movementMonth.addEventListener("change", updateInstallmentsMath);
+
+  // Submit form
+  el.form.addEventListener("submit", (e) => {
+    e.preventDefault();
+    saveMovementFromModal();
+  });
+
+  // Import PDF (solo UI)
+  el.btnImportPdf.addEventListener("click", () => {
+    alert("Importar PDF: UI lista. (Aún sin parse real)");
+  });
+
+  // Modal defaults
+  el.movementMonth.value = selectedMonth;
+  setModalType("expense");
+}
+
+function initProjectionPlaceholders() {
+  el.projectionGrid.innerHTML = "";
+  for (let i = 0; i < 6; i++) {
+    const div = document.createElement("div");
+    div.className = "proj-card";
+    el.projectionGrid.appendChild(div);
   }
 }
-function saveMovements(arr) {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(arr));
+
+function setView(view) {
+  const isDash = view === "dashboard";
+
+  el.tabDashboard.classList.toggle("active", isDash);
+  el.tabMiMes.classList.toggle("active", !isDash);
+
+  el.viewDashboard.classList.toggle("hidden", !isDash);
+  el.viewMiMes.classList.toggle("hidden", isDash);
 }
 
-// Seed inicial (opcional)
-function ensureSeedIfEmpty() {
-  const current = loadMovements();
-  if (current.length > 0) return;
-
-  if (!ENABLE_SEED) return;
-
-  const now = new Date();
-  const yyyy = now.getFullYear();
-  const mm = String(now.getMonth() + 1).padStart(2, "0");
-  const baseMonth = `${yyyy}-${mm}`;
-
-  const seed = [
-    {
-      id: uid(),
-      type: "ingreso",
-      descripcion: "Sueldo",
-      monto: 250000,
-      mes: baseMonth,
-      categoria: "Consumo General",
-      cuotas: 1,
-      createdAt: Date.now()
-    },
-    {
-      id: uid(),
-      type: "gasto",
-      descripcion: "Supermercado",
-      monto: 65000,
-      mes: baseMonth,
-      categoria: "Consumo General",
-      cuotas: 1,
-      createdAt: Date.now()
-    }
-  ];
-  saveMovements(seed);
+/* =========================
+   Modal logic
+   ========================= */
+function getModalType() {
+  return el.tabIncome.classList.contains("active") ? "income" : "expense";
 }
-
-// ---------- UI refs ----------
-const tabDashboard = $("#tabDashboard");
-const tabMiMes = $("#tabMiMes");
-const viewDashboard = $("#viewDashboard");
-const viewMiMes = $("#viewMiMes");
-
-const monthInput = $("#monthInput");
-const heroMonthLabel = $("#heroMonthLabel");
-
-const cardRemainder = $("#cardRemainder");
-const cardIncome = $("#cardIncome");
-const cardExpense = $("#cardExpense");
-const paidCount = $("#paidCount");
-const totalCount = $("#totalCount");
-
-const projectionGrid = $("#projectionGrid");
-
-const monthIncomeTotal = $("#monthIncomeTotal");
-const monthExpenseTotal = $("#monthExpenseTotal");
-const incomeEmpty = $("#incomeEmpty");
-const expenseEmpty = $("#expenseEmpty");
-const incomeList = $("#incomeList");
-const expenseRows = $("#expenseRows");
-
-const btnOpenModal = $("#btnOpenModal");
-const fabOpenModal = $("#fabOpenModal");
-const modalOverlay = $("#modalOverlay");
-const btnCloseModal = $("#btnCloseModal");
-const modalTabGasto = $("#modalTabGasto");
-const modalTabIngreso = $("#modalTabIngreso");
-
-const movementForm = $("#movementForm");
-const descInput = $("#descInput");
-const amountInput = $("#amountInput");
-const amountLabel = $("#amountLabel");
-const startMonthInput = $("#startMonthInput");
-const categorySelect = $("#categorySelect");
-
-const installmentsBox = $("#installmentsBox");
-const installmentsInput = $("#installmentsInput");
-const installmentsMath = $("#installmentsMath");
-const installmentsHint = $("#installmentsHint");
-
-// ---------- Tabs ----------
-function setView(which) {
-  const dash = which === "dashboard";
-  tabDashboard.classList.toggle("is-active", dash);
-  tabMiMes.classList.toggle("is-active", !dash);
-  tabDashboard.setAttribute("aria-selected", dash ? "true" : "false");
-  tabMiMes.setAttribute("aria-selected", dash ? "false" : "true");
-  viewDashboard.classList.toggle("is-active", dash);
-  viewMiMes.classList.toggle("is-active", !dash);
-}
-
-tabDashboard.addEventListener("click", () => setView("dashboard"));
-tabMiMes.addEventListener("click", () => setView("mimes"));
-
-// ---------- Modal ----------
-function openModal() {
-  modalOverlay.classList.add("is-open");
-  modalOverlay.setAttribute("aria-hidden", "false");
-  // reset form
-  descInput.value = "";
-  amountInput.value = "";
-  categorySelect.value = "Consumo General";
-  installmentsInput.value = 1;
-  startMonthInput.value = selectedMonth || monthInput.value;
-  setModalType(modalType);
-  updateInstallmentsUI();
-  setTimeout(() => descInput.focus(), 50);
-}
-function closeModal() {
-  modalOverlay.classList.remove("is-open");
-  modalOverlay.setAttribute("aria-hidden", "true");
-}
-
-btnOpenModal.addEventListener("click", openModal);
-fabOpenModal.addEventListener("click", openModal);
-btnCloseModal.addEventListener("click", closeModal);
-modalOverlay.addEventListener("click", (e) => {
-  if (e.target === modalOverlay) closeModal();
-});
-document.addEventListener("keydown", (e) => {
-  if (e.key === "Escape" && modalOverlay.classList.contains("is-open")) closeModal();
-});
 
 function setModalType(type) {
-  modalType = type;
-  const isGasto = type === "gasto";
-  modalTabGasto.classList.toggle("is-active", isGasto);
-  modalTabIngreso.classList.toggle("is-active", !isGasto);
-  modalTabGasto.setAttribute("aria-selected", isGasto ? "true" : "false");
-  modalTabIngreso.setAttribute("aria-selected", isGasto ? "false" : "true");
+  const isIncome = type === "income";
+  el.tabIncome.classList.toggle("active", isIncome);
+  el.tabExpense.classList.toggle("active", !isIncome);
 
-  amountLabel.textContent = isGasto ? "Monto" : "Monto";
+  // Etiqueta Monto (si querés diferenciar)
+  el.amountLabel.textContent = isIncome ? "Monto" : "Monto";
+
+  // Poner categorías correctas
+  setCategoryOptionsByType(type);
+
+  // Cuotas solo si es gasto + categoria correspondiente
+  updateInstallmentsVisibility();
+
+  // Reset cuotas a 1 por seguridad
+  el.installmentsInput.value = 1;
+  updateInstallmentsMath();
 }
 
-modalTabGasto.addEventListener("click", () => setModalType("gasto"));
-modalTabIngreso.addEventListener("click", () => setModalType("ingreso"));
-
-// ---------- Installments behavior ----------
-function categoryHasInstallments(cat) {
-  return cat === "Tarjeta de Crédito" || cat === "Préstamo Personal";
+function setCategoryOptionsByType(type) {
+  const categories = type === "income" ? INCOME_CATEGORIES : EXPENSE_CATEGORIES;
+  el.movementCategory.innerHTML = categories
+    .map((c) => `<option value="${c}">${c}</option>`)
+    .join("");
 }
-function updateInstallmentsUI() {
-  const cat = categorySelect.value;
-  const show = categoryHasInstallments(cat);
 
-  installmentsBox.classList.toggle("is-hidden", !show);
+function openModal() {
+  // reset form
+  el.form.reset();
+  el.movementMonth.value = selectedMonth;
 
-  const cuota = Number(amountInput.value || 0);
-  const n = Math.max(1, Number(installmentsInput.value || 1));
+  // por defecto gasto
+  setModalType("expense");
+
+  el.modalOverlay.classList.remove("hidden");
+  setTimeout(() => el.movementDesc.focus(), 50);
+}
+
+function closeModal() {
+  el.modalOverlay.classList.add("hidden");
+}
+
+/* Cuotas */
+function updateInstallmentsVisibility() {
+  const type = getModalType();
+  const category = el.movementCategory.value;
+
+  const isInstallmentCategory =
+    category === "Tarjeta de Crédito" || category === "Préstamo Personal";
+
+  const show = type === "expense" && isInstallmentCategory;
+  el.installmentsBlock.classList.toggle("hidden", !show);
+
+  updateInstallmentsMath();
+}
+
+function updateInstallmentsMath() {
+  const show = !el.installmentsBlock.classList.contains("hidden");
+  if (!show) return;
+
+  const cuota = Number(el.movementAmount.value || 0);
+  const n = Math.max(1, Number(el.installmentsInput.value || 1));
   const total = cuota * n;
-  installmentsMath.textContent = `x ${moneyARS(cuota)} = Total ${moneyARS(total)}`;
-  installmentsHint.textContent = `El sistema generará automáticamente ${n} registros mensuales comenzando en ${startMonthInput.value || selectedMonth || "—"}.`;
+
+  el.installmentsMath.textContent = `x ${moneyARS(cuota)} = Total ${moneyARS(total)}`;
+  el.installmentsHint.textContent =
+    `El sistema generará automáticamente ${n} registros mensuales comenzando en ${el.movementMonth.value || selectedMonth}.`;
 }
 
-categorySelect.addEventListener("change", () => {
-  if (!categoryHasInstallments(categorySelect.value)) {
-    installmentsInput.value = 1;
+/* =========================
+   Save / Delete
+   ========================= */
+function saveMovementFromModal() {
+  const type = getModalType();
+  const descripcion = (el.movementDesc.value || "").trim();
+  const monto = Number(el.movementAmount.value || 0);
+  const mesInicio = el.movementMonth.value || selectedMonth;
+  const categoria = el.movementCategory.value;
+
+  if (!descripcion) {
+    alert("Completá la descripción.");
+    return;
   }
-  updateInstallmentsUI();
-});
-amountInput.addEventListener("input", updateInstallmentsUI);
-installmentsInput.addEventListener("input", updateInstallmentsUI);
-startMonthInput.addEventListener("change", updateInstallmentsUI);
+  if (!isFinite(monto) || monto <= 0) {
+    alert("Ingresá un monto válido.");
+    return;
+  }
+  if (!mesInicio) {
+    alert("Seleccioná un mes.");
+    return;
+  }
 
-// ---------- Create movement ----------
-movementForm.addEventListener("submit", (e) => {
-  e.preventDefault();
+  const isInstallmentCategory =
+    categoria === "Tarjeta de Crédito" || categoria === "Préstamo Personal";
 
-  const descripcion = (descInput.value || "").trim();
-  const monto = Number(amountInput.value || 0);
-  const mesInicio = startMonthInput.value;
-  const categoria = categorySelect.value;
-
-  if (!descripcion) return;
-  if (!mesInicio) return;
-  if (!(monto >= 0)) return;
-
-  const type = modalType === "ingreso" ? "ingreso" : "gasto";
-  const hasInst = categoryHasInstallments(categoria);
-  const cuotas = hasInst ? Math.max(1, Number(installmentsInput.value || 1)) : 1;
-
-  const data = loadMovements();
-  const baseCreatedAt = Date.now();
-
-  // Cuotas: el monto es valor de la cuota. Genera N registros (1 por mes).
-  const records = [];
-  for (let i = 0; i < cuotas; i++) {
-    records.push({
+  // Ingresos nunca generan cuotas
+  if (type === "income" || !isInstallmentCategory) {
+    const m = {
       id: uid(),
       type,
       descripcion,
       monto,
-      mes: addMonths(mesInicio, i),
+      mes: mesInicio,
       categoria,
-      cuotas,
-      createdAt: baseCreatedAt
+      cuotasInfo: null,
+      createdAt: Date.now(),
+    };
+    movements.push(m);
+    persistAndRerender();
+    closeModal();
+    return;
+  }
+
+  // Gastos con cuotas: monto = valor cuota, generar N registros
+  const n = Math.max(1, Number(el.installmentsInput.value || 1));
+  const baseId = uid();
+
+  for (let i = 0; i < n; i++) {
+    movements.push({
+      id: uid(),
+      type: "expense",
+      descripcion: `${descripcion} (Cuota ${i + 1}/${n})`,
+      monto,
+      mes: monthAdd(mesInicio, i),
+      categoria,
+      cuotasInfo: {
+        baseId,
+        cuotaIndex: i + 1,
+        cuotasTotal: n,
+        valorCuota: monto,
+        mesInicio,
+      },
+      createdAt: Date.now(),
     });
   }
 
-  saveMovements([...data, ...records]);
+  persistAndRerender();
   closeModal();
-  renderAll();
-});
+}
 
-// ---------- Delete movement ----------
-function deleteMovementById(id) {
-  const data = loadMovements();
-  const target = data.find(m => m.id === id);
-  if (!target) return;
+function deleteMovement(id) {
+  movements = movements.filter((m) => m.id !== id);
+  persistAndRerender();
+}
 
-  const ok = confirm(`¿Eliminar "${target.descripcion}" (${moneyARS(target.monto)}) del mes ${monthToLabel(target.mes)}?`);
-  if (!ok) return;
-
-  const next = data.filter(m => m.id !== id);
-  saveMovements(next);
+function persistAndRerender() {
+  saveMovements(movements);
   renderAll();
 }
 
-// Delegación de eventos (botones borrar)
-document.addEventListener("click", (e) => {
-  const btn = e.target.closest("[data-del-id]");
-  if (!btn) return;
-  const id = btn.getAttribute("data-del-id");
-  deleteMovementById(id);
-});
-
-// ---------- Month handling ----------
-function initMonth() {
-  const now = new Date();
-  const yyyy = now.getFullYear();
-  const mm = String(now.getMonth() + 1).padStart(2, "0");
-  selectedMonth = `${yyyy}-${mm}`;
-  monthInput.value = selectedMonth;
-  startMonthInput.value = selectedMonth;
-  heroMonthLabel.textContent = monthToLabel(selectedMonth);
-}
-
-monthInput.addEventListener("change", () => {
-  selectedMonth = monthInput.value;
-  heroMonthLabel.textContent = monthToLabel(selectedMonth);
-  // si modal está abierto, sincroniza mes inicio
-  if (modalOverlay.classList.contains("is-open")) {
-    startMonthInput.value = selectedMonth;
-    updateInstallmentsUI();
-  }
-  renderAll();
-});
-
-// ---------- Render ----------
-function sumByTypeForMonth(arr, month, type) {
-  return arr
-    .filter(m => m.mes === month && m.type === type)
-    .reduce((acc, m) => acc + Number(m.monto || 0), 0);
-}
-
-function renderProjection() {
-  projectionGrid.innerHTML = "";
-  // 6 meses desde el seleccionado
-  for (let i = 0; i < 6; i++) {
-    const m = addMonths(selectedMonth, i);
-    const income = sumByTypeForMonth(loadMovements(), m, "ingreso");
-    const expense = sumByTypeForMonth(loadMovements(), m, "gasto");
-    const rem = income - expense;
-
-    const col = document.createElement("div");
-    col.className = "proj-col";
-    col.innerHTML = `
-      <div class="proj-month">${monthToLabel(m)}</div>
-      <div class="proj-amt">${moneyARS(rem)}</div>
-      <div class="proj-sub">Ingresos: ${moneyARS(income)}<br/>Gastos: ${moneyARS(expense)}</div>
-    `;
-    projectionGrid.appendChild(col);
-  }
+/* =========================
+   Rendering
+   ========================= */
+function renderAll() {
+  renderDashboard();
+  renderMiMes();
 }
 
 function renderDashboard() {
-  const data = loadMovements();
-  const income = sumByTypeForMonth(data, selectedMonth, "ingreso");
-  const expense = sumByTypeForMonth(data, selectedMonth, "gasto");
-  const remainder = income - expense;
+  const monthMovs = movements.filter((m) => m.mes === selectedMonth);
 
-  cardIncome.textContent = moneyARS(income);
-  cardExpense.textContent = moneyARS(expense);
-  cardRemainder.textContent = moneyARS(remainder);
+  const income = sumByType(monthMovs, "income");
+  const expense = sumByType(monthMovs, "expense");
+  const remaining = income - expense;
 
-  // "pagados de" (en este MVP asumimos todos los gastos como pagados)
-  const monthExpenses = data.filter(m => m.mes === selectedMonth && m.type === "gasto");
-  paidCount.textContent = String(monthExpenses.length);
-  totalCount.textContent = String(monthExpenses.length);
+  el.dashIncome.textContent = moneyARS(income);
+  el.dashExpense.textContent = moneyARS(expense);
+  el.dashRemaining.textContent = moneyARS(remaining);
 
-  renderProjection();
+  // "pagados de" (placeholder simple, no tracking real)
+  const totalExpensesCount = monthMovs.filter((m) => m.type === "expense").length;
+  el.dashPaidInfo.textContent = `0 pagados de ${totalExpensesCount}`;
 }
 
 function renderMiMes() {
-  const data = loadMovements();
-  const incomes = data
-    .filter(m => m.mes === selectedMonth && m.type === "ingreso")
-    .sort((a,b) => (a.createdAt||0) - (b.createdAt||0));
-  const expenses = data
-    .filter(m => m.mes === selectedMonth && m.type === "gasto")
-    .sort((a,b) => (a.createdAt||0) - (b.createdAt||0));
+  const monthMovs = movements.filter((m) => m.mes === selectedMonth);
 
-  const incomeTotal = incomes.reduce((acc, m) => acc + Number(m.monto||0), 0);
-  const expenseTotal = expenses.reduce((acc, m) => acc + Number(m.monto||0), 0);
+  const incomeMovs = monthMovs.filter((m) => m.type === "income");
+  const expenseMovs = monthMovs.filter((m) => m.type === "expense");
 
-  monthIncomeTotal.textContent = moneyARS(incomeTotal);
-  monthExpenseTotal.textContent = moneyARS(expenseTotal);
+  const incomeTotal = sum(incomeMovs.map((m) => m.monto));
+  const expenseTotal = sum(expenseMovs.map((m) => m.monto));
+
+  el.monthIncomeTotal.textContent = moneyARS(incomeTotal);
+  el.monthExpenseTotal.textContent = moneyARS(expenseTotal);
 
   // Ingresos list
-  incomeList.innerHTML = "";
-  incomeEmpty.classList.toggle("hidden", incomes.length > 0);
-  if (incomes.length) {
-    incomes.forEach(m => {
-      const li = document.createElement("li");
-      li.className = "list-item";
-      li.innerHTML = `
-        <div>
-          <div class="li-title">${escapeHtml(m.descripcion)}</div>
-          <div class="li-sub">${escapeHtml(m.categoria)} · ${monthToLabel(m.mes)}</div>
-        </div>
-        <div class="li-right">
-          <div class="li-amt" style="color:var(--green)">${moneyARS(m.monto)}</div>
-          <button class="del-btn" type="button" title="Eliminar" data-del-id="${m.id}">🗑</button>
-        </div>
-      `;
-      incomeList.appendChild(li);
-    });
+  if (incomeMovs.length === 0) {
+    el.monthIncomeBody.innerHTML = `<div class="empty">No hay ingresos registrados.</div>`;
+  } else {
+    el.monthIncomeBody.innerHTML = incomeMovs
+      .sort((a, b) => b.createdAt - a.createdAt)
+      .map((m) => renderItem(m, "green"))
+      .join("");
+    wireDeleteButtons(el.monthIncomeBody);
   }
 
-  // Gastos rows
-  expenseRows.innerHTML = "";
-  expenseEmpty.classList.toggle("hidden", expenses.length > 0);
-  $("#expenseTable").classList.toggle("hidden", expenses.length === 0);
+  // Gastos list (tabla como en captura, pero con items detallados + delete)
+  if (expenseMovs.length === 0) {
+    el.monthExpenseBody.innerHTML = `<div class="empty">Todo limpio por aquí.</div>`;
+  } else {
+    // Tabla con filas (detalle/monto) + botón borrar
+    const rows = expenseMovs
+      .sort((a, b) => b.createdAt - a.createdAt)
+      .map((m) => {
+        const sub = `${m.categoria} • ${monthShortLabel(m.mes)}`;
+        return `
+          <tr>
+            <td>
+              <div style="font-weight:950; font-size:18px;">${escapeHtml(m.descripcion)}</div>
+              <div style="color:var(--muted); font-weight:750; margin-top:4px;">${escapeHtml(sub)}</div>
+            </td>
+            <td class="right">
+              <div class="amount red">${moneyARS(m.monto)}</div>
+              <button class="trash" data-delete-id="${m.id}" title="Eliminar">🗑️</button>
+            </td>
+          </tr>
+        `;
+      })
+      .join("");
 
-  if (expenses.length) {
-    expenses.forEach(m => {
-      const row = document.createElement("div");
-      row.className = "tr";
-      row.innerHTML = `
-        <div class="td-left">
-          <div style="font-size:20px;font-weight:950">${escapeHtml(m.descripcion)}</div>
-          <div class="td-sub">${escapeHtml(m.categoria)} · ${monthToLabel(m.mes)}</div>
-        </div>
-        <div class="td-right-wrap">
-          <div class="td-right">${moneyARS(m.monto)}</div>
-          <button class="del-btn" type="button" title="Eliminar" data-del-id="${m.id}">🗑</button>
-        </div>
-      `;
-      expenseRows.appendChild(row);
-    });
+    el.monthExpenseBody.innerHTML = `
+      <table class="table">
+        <thead>
+          <tr>
+            <th>DETALLE</th>
+            <th class="right">MONTO</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${rows}
+        </tbody>
+      </table>
+    `;
+    wireDeleteButtons(el.monthExpenseBody);
   }
 }
 
+function renderItem(m, color) {
+  const badge = (m.descripcion || "•").trim().slice(0, 1).toLowerCase();
+  const sub = `${m.categoria} • ${monthShortLabel(m.mes)}`;
+
+  return `
+    <div class="item">
+      <div class="item-left">
+        <div class="item-badge">${escapeHtml(badge)}</div>
+        <div class="item-meta">
+          <p class="item-title">${escapeHtml(m.descripcion)}</p>
+          <p class="item-sub">${escapeHtml(sub)}</p>
+        </div>
+      </div>
+      <div class="item-right">
+        <div class="amount ${color}">${moneyARS(m.monto)}</div>
+        <button class="trash" data-delete-id="${m.id}" title="Eliminar">🗑️</button>
+      </div>
+    </div>
+  `;
+}
+
+function wireDeleteButtons(container) {
+  container.querySelectorAll("[data-delete-id]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const id = btn.getAttribute("data-delete-id");
+      const ok = confirm("¿Eliminar este movimiento?");
+      if (!ok) return;
+      deleteMovement(id);
+    });
+  });
+}
+
+/* =========================
+   Storage
+   ========================= */
+function loadMovements() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed;
+  } catch {
+    return [];
+  }
+}
+
+function saveMovements(list) {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(list));
+}
+
+function initSeedIfNeeded() {
+  const existing = loadMovements();
+  if (existing.length > 0) {
+    movements = existing;
+    return;
+  }
+
+  if (!ENABLE_SEED) {
+    movements = [];
+    return;
+  }
+
+  // Seed: 1 ingreso + 1 gasto en el mes actual
+  const m = getCurrentMonth();
+  movements = [
+    {
+      id: uid(),
+      type: "income",
+      descripcion: "Sueldo",
+      monto: 250000,
+      mes: m,
+      categoria: "Sueldo",
+      cuotasInfo: null,
+      createdAt: Date.now() - 1000 * 60 * 60,
+    },
+    {
+      id: uid(),
+      type: "expense",
+      descripcion: "Supermercado",
+      monto: 65000,
+      mes: m,
+      categoria: "Consumo General",
+      cuotasInfo: null,
+      createdAt: Date.now() - 1000 * 60 * 30,
+    },
+  ];
+  saveMovements(movements);
+}
+
+/* =========================
+   Helpers
+   ========================= */
+function sum(nums) {
+  return nums.reduce((acc, n) => acc + Number(n || 0), 0);
+}
+
+function sumByType(list, type) {
+  return sum(list.filter((m) => m.type === type).map((m) => m.monto));
+}
+
+function getCurrentMonth() {
+  const d = new Date();
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  return `${y}-${m}`;
+}
+
+function monthShortLabel(yyyyMm) {
+  const [y, m] = yyyyMm.split("-").map(Number);
+  const d = new Date(y, m - 1, 1);
+  const fmt = new Intl.DateTimeFormat("es-AR", { month: "short", year: "numeric" });
+  // "feb 2026"
+  return fmt.format(d).replace(".", "");
+}
+
 function escapeHtml(str) {
-  return String(str || "")
+  return String(str ?? "")
     .replaceAll("&", "&amp;")
     .replaceAll("<", "&lt;")
     .replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&#039;");
 }
-
-function renderAll() {
-  heroMonthLabel.textContent = monthToLabel(selectedMonth);
-  renderDashboard();
-  renderMiMes();
-}
-
-// ---------- Init ----------
-(function init() {
-  ensureSeedIfEmpty();
-  initMonth();
-  renderAll();
-
-  // "Importar PDF" UI only
-  $("#btnImportPdf").addEventListener("click", () => {
-    alert("Importar PDF (UI): próximamente. Por ahora cargá los movimientos manualmente.");
-  });
-})();
