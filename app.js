@@ -1,556 +1,431 @@
-{\rtf1\ansi\ansicpg1252\cocoartf2761
-\cocoatextscaling0\cocoaplatform0{\fonttbl\f0\fswiss\fcharset0 Helvetica;}
-{\colortbl;\red255\green255\blue255;}
-{\*\expandedcolortbl;;}
-\paperw11900\paperh16840\margl1440\margr1440\vieww11520\viewh8400\viewkind0
-\pard\tx720\tx1440\tx2160\tx2880\tx3600\tx4320\tx5040\tx5760\tx6480\tx7200\tx7920\tx8640\pardirnatural\partightenfactor0
+/* FinanzasPro AR - Vanilla JS
+   - Guarda en localStorage
+   - Cuotas generan N registros mensuales
+   - UI: Dashboard + Mi Mes + Modal
+   - Incluye eliminar movimientos desde "Mi Mes"
+*/
 
-\f0\fs24 \cf0 /* =========================\
-   FinanzasPro AR (Vanilla)\
-   ========================= */\
-\
-const ENABLE_SEED = true; // <- ponelo en false si no quer\'e9s movimientos de ejemplo\
-const LS_KEY = "finanzaspro_ar_movimientos_v1";\
-\
-let currentView = "dashboard"; // dashboard | month\
-let currentMonth = getTodayMonth(); // YYYY-MM\
-let modalType = "gasto"; // gasto | ingreso\
-\
-// ---------- DOM ----------\
-const $ = (sel) => document.querySelector(sel);\
-\
-const viewDashboard = $("#viewDashboard");\
-const viewMonth = $("#viewMonth");\
-\
-const tabs = document.querySelectorAll(".tab");\
-const monthInput = $("#monthInput");\
-const selectedMonthLabel = $("#selectedMonthLabel");\
-\
-const cardRemanente = $("#cardRemanente");\
-const cardIngresos = $("#cardIngresos");\
-const cardGastos = $("#cardGastos");\
-const gastosMeta = $("#gastosMeta");\
-\
-const projectionGrid = $("#projectionGrid");\
-\
-const monthIngresosTotal = $("#monthIngresosTotal");\
-const monthGastosTotal = $("#monthGastosTotal");\
-const monthIngresosList = $("#monthIngresosList");\
-const monthIngresosEmpty = $("#monthIngresosEmpty");\
-const monthGastosRows = $("#monthGastosRows");\
-const monthGastosEmpty = $("#monthGastosEmpty");\
-\
-const btnAddMovementTop = $("#btnAddMovementTop");\
-const fabAdd = $("#fabAdd");\
-const btnImportPdf = $("#btnImportPdf");\
-\
-// Modal\
-const modalOverlay = $("#modalOverlay");\
-const btnCloseModal = $("#btnCloseModal");\
-const modalTabs = document.querySelectorAll(".modal-tab");\
-const movementForm = $("#movementForm");\
-const descInput = $("#descInput");\
-const amountInput = $("#amountInput");\
-const startMonthInput = $("#startMonthInput");\
-const categorySelect = $("#categorySelect");\
-const installmentsBox = $("#installmentsBox");\
-const installmentsInput = $("#installmentsInput");\
-const installmentValue = $("#installmentValue");\
-const installmentTotal = $("#installmentTotal");\
-const installmentsHint = $("#installmentsHint");\
-const montoLabel = $("#montoLabel");\
-\
-// ---------- INIT ----------\
-init();\
-\
-function init() \{\
-  // Month default\
-  monthInput.value = currentMonth;\
-  startMonthInput.value = currentMonth;\
-  updateMonthLabel();\
-\
-  // Seed\
-  ensureSeed();\
-\
-  // Render\
-  renderAll();\
-\
-  // Events\
-  tabs.forEach((t) => t.addEventListener("click", () => setView(t.dataset.view)));\
-  monthInput.addEventListener("change", () => \{\
-    currentMonth = monthInput.value || getTodayMonth();\
-    startMonthInput.value = currentMonth;\
-    updateMonthLabel();\
-    renderAll();\
-  \});\
-\
-  btnAddMovementTop.addEventListener("click", openModal);\
-  fabAdd.addEventListener("click", openModal);\
-\
-  btnImportPdf.addEventListener("click", () => \{\
-    alert("Importar PDF (UI): pr\'f3ximamente. Por ahora pod\'e9s cargar movimientos manualmente.");\
-  \});\
-\
-  btnCloseModal.addEventListener("click", closeModal);\
-  modalOverlay.addEventListener("click", (e) => \{\
-    if (e.target === modalOverlay) closeModal();\
-  \});\
-\
-  modalTabs.forEach((t) =>\
-    t.addEventListener("click", () => \{\
-      setModalType(t.dataset.type);\
-    \})\
-  );\
-\
-  categorySelect.addEventListener("change", syncInstallmentsVisibility);\
-  installmentsInput.addEventListener("input", syncInstallmentsMath);\
-  amountInput.addEventListener("input", syncInstallmentsMath);\
-  startMonthInput.addEventListener("change", syncInstallmentsMath);\
-\
-  movementForm.addEventListener("submit", onSubmitMovement);\
-\
-  // Delegaci\'f3n de eventos para eliminar (Mi Mes)\
-  monthIngresosList.addEventListener("click", onMonthListClick);\
-  monthGastosRows.addEventListener("click", onMonthTableClick);\
-\
-  // Esc to close modal\
-  window.addEventListener("keydown", (e) => \{\
-    if (e.key === "Escape") closeModal();\
-  \});\
-\}\
-\
-// ---------- VIEW ----------\
-function setView(view) \{\
-  currentView = view;\
-\
-  tabs.forEach((t) => \{\
-    const isActive = t.dataset.view === view;\
-    t.classList.toggle("is-active", isActive);\
-    t.setAttribute("aria-selected", isActive ? "true" : "false");\
-  \});\
-\
-  viewDashboard.classList.toggle("is-active", view === "dashboard");\
-  viewMonth.classList.toggle("is-active", view === "month");\
-\
-  renderAll();\
-\}\
-\
-function updateMonthLabel() \{\
-  selectedMonthLabel.textContent = formatMonthLabel(currentMonth);\
-\}\
-\
-// ---------- STORAGE ----------\
-function loadMovements() \{\
-  try \{\
-    const raw = localStorage.getItem(LS_KEY);\
-    const data = raw ? JSON.parse(raw) : [];\
-    return Array.isArray(data) ? data : [];\
-  \} catch \{\
-    return [];\
-  \}\
-\}\
-\
-function saveMovements(list) \{\
-  localStorage.setItem(LS_KEY, JSON.stringify(list));\
-\}\
-\
-function ensureSeed() \{\
-  if (!ENABLE_SEED) return;\
-\
-  const existing = loadMovements();\
-  if (existing.length > 0) return;\
-\
-  const seedMonth = currentMonth;\
-\
-  const seed = [\
-    \{\
-      id: cryptoId(),\
-      tipo: "ingreso",\
-      descripcion: "Sueldo",\
-      monto: 250000,\
-      mes: seedMonth,\
-      categoria: "Consumo General",\
-      createdAt: Date.now()\
-    \},\
-    \{\
-      id: cryptoId(),\
-      tipo: "gasto",\
-      descripcion: "Supermercado",\
-      monto: 65000,\
-      mes: seedMonth,\
-      categoria: "Consumo General",\
-      createdAt: Date.now()\
-    \}\
-  ];\
-\
-  saveMovements(seed);\
-\}\
-\
-// ---------- RENDER ----------\
-function renderAll() \{\
-  const movements = loadMovements();\
-  const monthMovs = movements.filter((m) => m.mes === currentMonth);\
-\
-  const ingresos = monthMovs.filter((m) => m.tipo === "ingreso");\
-  const gastos = monthMovs.filter((m) => m.tipo === "gasto");\
-\
-  const totalIngresos = sum(ingresos.map((m) => m.monto));\
-  const totalGastos = sum(gastos.map((m) => m.monto));\
-  const remanente = totalIngresos - totalGastos;\
-\
-  // Cards\
-  cardIngresos.textContent = money(totalIngresos);\
-  cardGastos.textContent = money(totalGastos);\
-  cardRemanente.textContent = money(remanente);\
-\
-  // "pagados de" (placeholder)\
-  gastosMeta.textContent = `$\{gastos.length\} pagados de $\{gastos.length\}`;\
-\
-  // Projection (6 meses)\
-  renderProjection(movements);\
-\
-  // Month view\
-  renderMonthView(ingresos, gastos);\
-\}\
-\
-function renderProjection(allMovements) \{\
-  projectionGrid.innerHTML = "";\
-\
-  const months = nextMonths(currentMonth, 6);\
-  months.forEach((m) => \{\
-    const monthMovs = allMovements.filter((x) => x.mes === m);\
-    const inc = sum(monthMovs.filter((x) => x.tipo === "ingreso").map((x) => x.monto));\
-    const exp = sum(monthMovs.filter((x) => x.tipo === "gasto").map((x) => x.monto));\
-    const rem = inc - exp;\
-\
-    const col = document.createElement("div");\
-    col.className = "proj-col";\
-    col.innerHTML = `\
-      <div class="proj-month">$\{formatMonthShort(m)\}</div>\
-      <div class="proj-amt">$\{money(rem)\}</div>\
-      <div class="proj-sub">Ingresos $\{money(inc)\} \'b7 Gastos $\{money(exp)\}</div>\
-    `;\
-    projectionGrid.appendChild(col);\
-  \});\
-\}\
-\
-function renderMonthView(ingresos, gastos) \{\
-  monthIngresosTotal.textContent = money(sum(ingresos.map((m) => m.monto)));\
-  monthGastosTotal.textContent = money(sum(gastos.map((m) => m.monto)));\
-\
-  // Ingresos list\
-  monthIngresosList.innerHTML = "";\
-  if (ingresos.length === 0) \{\
-    monthIngresosEmpty.classList.remove("hidden");\
-  \} else \{\
-    monthIngresosEmpty.classList.add("hidden");\
-    ingresos\
-      .slice()\
-      .sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0))\
-      .forEach((m) => \{\
-        const li = document.createElement("li");\
-        li.className = "list-item";\
-        li.innerHTML = `\
-          <div class="li-left">\
-            <div class="li-title">$\{escapeHtml(m.descripcion || "Ingreso")\}</div>\
-            <div class="li-sub">$\{escapeHtml(m.categoria || "")\} \'b7 $\{formatMonthShort(m.mes)\}</div>\
-          </div>\
-\
-          <div class="li-right">\
-            <div class="li-amt" style="color: var(--green)">$\{money(m.monto)\}</div>\
-            <button class="del-btn" data-action="delete" data-id="$\{escapeAttr(m.id)\}" title="Eliminar">\
-              \uc0\u55357 \u56785 \u65039 \
-            </button>\
-          </div>\
-        `;\
-        monthIngresosList.appendChild(li);\
-      \});\
-  \}\
-\
-  // Gastos table\
-  monthGastosRows.innerHTML = "";\
-  if (gastos.length === 0) \{\
-    monthGastosEmpty.classList.remove("hidden");\
-  \} else \{\
-    monthGastosEmpty.classList.add("hidden");\
-    gastos\
-      .slice()\
-      .sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0))\
-      .forEach((m) => \{\
-        const row = document.createElement("div");\
-        row.className = "tr";\
-        row.innerHTML = `\
-          <div class="td-left">\
-            $\{escapeHtml(m.descripcion || "Gasto")\}\
-            <div class="td-sub">$\{escapeHtml(m.categoria || "")\}</div>\
-          </div>\
-\
-          <div class="td-right-wrap">\
-            <div class="td-right">$\{money(m.monto)\}</div>\
-            <button class="del-btn" data-action="delete" data-id="$\{escapeAttr(m.id)\}" title="Eliminar">\
-              \uc0\u55357 \u56785 \u65039 \
-            </button>\
-          </div>\
-        `;\
-        monthGastosRows.appendChild(row);\
-      \});\
-  \}\
-\}\
-\
-// ---------- DELETE LOGIC ----------\
-function onMonthListClick(e) \{\
-  const btn = e.target.closest("button[data-action='delete']");\
-  if (!btn) return;\
-  const id = btn.dataset.id;\
-  deleteMovementFlow(id);\
-\}\
-\
-function onMonthTableClick(e) \{\
-  const btn = e.target.closest("button[data-action='delete']");\
-  if (!btn) return;\
-  const id = btn.dataset.id;\
-  deleteMovementFlow(id);\
-\}\
-\
-function deleteMovementFlow(id) \{\
-  const all = loadMovements();\
-  const item = all.find((m) => m.id === id);\
-  if (!item) return;\
-\
-  const hasPlan = Boolean(item.planId) || (item.cuotas && item.cuotas > 1);\
-\
-  if (hasPlan) \{\
-    const planId = item.planId || null;\
-\
-    if (!planId) \{\
-      const ok = confirm("\'bfEliminar esta cuota?");\
-      if (!ok) return;\
-      saveMovements(all.filter((m) => m.id !== id));\
-      renderAll();\
-      return;\
-    \}\
-\
-    const choice = confirm(\
-      "Este movimiento pertenece a un plan en cuotas.\\n\\nOK = Eliminar TODAS las cuotas del plan\\nCancelar = Eliminar SOLO esta cuota"\
-    );\
-\
-    const updated = choice ? all.filter((m) => m.planId !== planId) : all.filter((m) => m.id !== id);\
-    saveMovements(updated);\
-    renderAll();\
-    return;\
-  \}\
-\
-  const ok = confirm("\'bfEliminar este movimiento?");\
-  if (!ok) return;\
-\
-  saveMovements(all.filter((m) => m.id !== id));\
-  renderAll();\
-\}\
-\
-// ---------- MODAL ----------\
-function openModal() \{\
-  modalType = "gasto";\
-  setModalType("gasto");\
-\
-  descInput.value = "";\
-  amountInput.value = "";\
-  startMonthInput.value = currentMonth;\
-  categorySelect.value = "Consumo General";\
-  installmentsInput.value = "1";\
-\
-  syncInstallmentsVisibility();\
-  syncInstallmentsMath();\
-\
-  modalOverlay.classList.add("is-open");\
-  modalOverlay.setAttribute("aria-hidden", "false");\
-  setTimeout(() => descInput.focus(), 50);\
-\}\
-\
-function closeModal() \{\
-  modalOverlay.classList.remove("is-open");\
-  modalOverlay.setAttribute("aria-hidden", "true");\
-\}\
-\
-function setModalType(type) \{\
-  modalType = type;\
-  modalTabs.forEach((t) => \{\
-    const active = t.dataset.type === type;\
-    t.classList.toggle("is-active", active);\
-    t.setAttribute("aria-selected", active ? "true" : "false");\
-  \});\
-\
-  syncInstallmentsVisibility();\
-  syncInstallmentsMath();\
-\}\
-\
-function syncInstallmentsVisibility() \{\
-  const cat = categorySelect.value;\
-  const showInstallments = cat === "Tarjeta de Cr\'e9dito" || cat === "Pr\'e9stamo Personal";\
-\
-  installmentsBox.classList.toggle("is-hidden", !showInstallments);\
-  montoLabel.textContent = showInstallments ? "Monto (Valor de la cuota)" : "Monto";\
-  syncInstallmentsMath();\
-\}\
-\
-function syncInstallmentsMath() \{\
-  const cat = categorySelect.value;\
-  const showInstallments = cat === "Tarjeta de Cr\'e9dito" || cat === "Pr\'e9stamo Personal";\
-  if (!showInstallments) return;\
-\
-  const cuota = toNumber(amountInput.value);\
-  const n = clampInt(toInt(installmentsInput.value), 1, 120);\
-  installmentsInput.value = String(n);\
-\
-  installmentValue.textContent = money(cuota);\
-  installmentTotal.textContent = money(cuota * n);\
-\
-  const start = startMonthInput.value || currentMonth;\
-  installmentsHint.textContent =\
-    `El sistema generar\'e1 autom\'e1ticamente $\{n\} registros mensuales comenzando en $\{formatMonthLabel(start)\}.`;\
-\}\
-\
-function onSubmitMovement(e) \{\
-  e.preventDefault();\
-\
-  const descripcion = descInput.value.trim();\
-  const monto = toNumber(amountInput.value);\
-  const mesInicio = startMonthInput.value || currentMonth;\
-  const categoria = categorySelect.value;\
-\
-  if (!descripcion) return alert("La descripci\'f3n es obligatoria.");\
-  if (!(monto >= 0)) return alert("El monto debe ser v\'e1lido.");\
-  if (!mesInicio) return alert("Seleccion\'e1 un mes de inicio.");\
-\
-  const showInstallments = categoria === "Tarjeta de Cr\'e9dito" || categoria === "Pr\'e9stamo Personal";\
-  const cuotas = showInstallments ? clampInt(toInt(installmentsInput.value), 1, 120) : 1;\
-\
-  const list = loadMovements();\
-\
-  if (showInstallments) \{\
-    const planId = cryptoId();\
-    const months = nextMonths(mesInicio, cuotas);\
-\
-    months.forEach((m, idx) => \{\
-      list.push(\{\
-        id: cryptoId(),\
-        planId,\
-        tipo: modalType,\
-        descripcion: `$\{descripcion\} (Cuota $\{idx + 1\}/$\{cuotas\})`,\
-        monto: round2(monto),\
-        mes: m,\
-        categoria,\
-        cuotas,\
-        cuotaIndex: idx + 1,\
-        createdAt: Date.now()\
-      \});\
-    \});\
-  \} else \{\
-    list.push(\{\
-      id: cryptoId(),\
-      tipo: modalType,\
-      descripcion,\
-      monto: round2(monto),\
-      mes: mesInicio,\
-      categoria,\
-      cuotas: 1,\
-      createdAt: Date.now()\
-    \});\
-  \}\
-\
-  saveMovements(list);\
-  renderAll();\
-  closeModal();\
-\}\
-\
-// ---------- HELPERS ----------\
-function sum(arr) \{\
-  return arr.reduce((a, b) => a + (Number(b) || 0), 0);\
-\}\
-\
-function money(n) \{\
-  const val = Number(n) || 0;\
-  return val.toLocaleString("es-AR", \{\
-    style: "currency",\
-    currency: "ARS",\
-    maximumFractionDigits: 2\
-  \});\
-\}\
-\
-function getTodayMonth() \{\
-  const d = new Date();\
-  const y = d.getFullYear();\
-  const m = String(d.getMonth() + 1).padStart(2, "0");\
-  return `$\{y\}-$\{m\}`;\
-\}\
-\
-function formatMonthLabel(yyyyMm) \{\
-  const [y, m] = String(yyyyMm || "").split("-").map(Number);\
-  if (!y || !m) return "\'97";\
-  const date = new Date(y, m - 1, 1);\
-  return date.toLocaleDateString("es-AR", \{ month: "long", year: "numeric" \});\
-\}\
-\
-function formatMonthShort(yyyyMm) \{\
-  const [y, m] = String(yyyyMm || "").split("-").map(Number);\
-  if (!y || !m) return "\'97";\
-  const date = new Date(y, m - 1, 1);\
-  const mon = date.toLocaleDateString("es-AR", \{ month: "short" \}).replace(".", "");\
-  return `$\{capitalize(mon)\} $\{y\}`;\
-\}\
-\
-function nextMonths(startYYYYMM, count) \{\
-  const [y, m] = String(startYYYYMM || "").split("-").map(Number);\
-  if (!y || !m) return [];\
-  const res = [];\
-  const d = new Date(y, m - 1, 1);\
-\
-  for (let i = 0; i < count; i++) \{\
-    const yy = d.getFullYear();\
-    const mm = String(d.getMonth() + 1).padStart(2, "0");\
-    res.push(`$\{yy\}-$\{mm\}`);\
-    d.setMonth(d.getMonth() + 1);\
-  \}\
-  return res;\
-\}\
-\
-function toNumber(v) \{\
-  const n = Number(String(v).replace(",", "."));\
-  return Number.isFinite(n) ? n : 0;\
-\}\
-\
-function toInt(v) \{\
-  const n = parseInt(v, 10);\
-  return Number.isFinite(n) ? n : 0;\
-\}\
-\
-function clampInt(n, min, max) \{\
-  return Math.max(min, Math.min(max, n));\
-\}\
-\
-function round2(n) \{\
-  return Math.round((Number(n) || 0) * 100) / 100;\
-\}\
-\
-function capitalize(s) \{\
-  if (!s) return s;\
-  return s.charAt(0).toUpperCase() + s.slice(1);\
-\}\
-\
-function escapeHtml(str) \{\
-  return String(str)\
-    .replaceAll("&", "&amp;")\
-    .replaceAll("<", "&lt;")\
-    .replaceAll(">", "&gt;")\
-    .replaceAll('"', "&quot;")\
-    .replaceAll("'", "&#039;");\
-\}\
-\
-function escapeAttr(str) \{\
-  return String(str).replaceAll('"', "&quot;");\
-\}\
-\
-function cryptoId() \{\
-  if (typeof crypto !== "undefined" && crypto.randomUUID) return crypto.randomUUID();\
-  return "id-" + Math.random().toString(16).slice(2) + "-" + Date.now();\
-\}\
+const STORAGE_KEY = "finanzaspro_ar_movements_v1";
+const ENABLE_SEED = true; // <- ponelo en false si no querés movimientos de ejemplo
+
+// ---------- Helpers ----------
+function $(sel) { return document.querySelector(sel); }
+function moneyARS(n) {
+  const val = Number(n || 0);
+  return val.toLocaleString("es-AR", { style: "currency", currency: "ARS", maximumFractionDigits: 2 });
 }
+function monthToLabel(yyyyMm) {
+  if (!yyyyMm) return "—";
+  const [y, m] = yyyyMm.split("-").map(Number);
+  const d = new Date(y, m - 1, 1);
+  return d.toLocaleDateString("es-AR", { month: "long", year: "numeric" });
+}
+function addMonths(yyyyMm, add) {
+  const [y, m] = yyyyMm.split("-").map(Number);
+  const d = new Date(y, (m - 1) + add, 1);
+  const yy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  return `${yy}-${mm}`;
+}
+function uid() {
+  if (typeof crypto !== "undefined" && crypto.randomUUID) return crypto.randomUUID();
+  return "id-" + Math.random().toString(16).slice(2) + "-" + Date.now();
+}
+
+// ---------- State ----------
+let selectedMonth = "";
+let modalType = "gasto"; // 'gasto' | 'ingreso'
+
+// ---------- Storage ----------
+function loadMovements() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    const arr = raw ? JSON.parse(raw) : [];
+    return Array.isArray(arr) ? arr : [];
+  } catch {
+    return [];
+  }
+}
+function saveMovements(arr) {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(arr));
+}
+
+// Seed inicial (opcional)
+function ensureSeedIfEmpty() {
+  const current = loadMovements();
+  if (current.length > 0) return;
+
+  if (!ENABLE_SEED) return;
+
+  const now = new Date();
+  const yyyy = now.getFullYear();
+  const mm = String(now.getMonth() + 1).padStart(2, "0");
+  const baseMonth = `${yyyy}-${mm}`;
+
+  const seed = [
+    {
+      id: uid(),
+      type: "ingreso",
+      descripcion: "Sueldo",
+      monto: 250000,
+      mes: baseMonth,
+      categoria: "Consumo General",
+      cuotas: 1,
+      createdAt: Date.now()
+    },
+    {
+      id: uid(),
+      type: "gasto",
+      descripcion: "Supermercado",
+      monto: 65000,
+      mes: baseMonth,
+      categoria: "Consumo General",
+      cuotas: 1,
+      createdAt: Date.now()
+    }
+  ];
+  saveMovements(seed);
+}
+
+// ---------- UI refs ----------
+const tabDashboard = $("#tabDashboard");
+const tabMiMes = $("#tabMiMes");
+const viewDashboard = $("#viewDashboard");
+const viewMiMes = $("#viewMiMes");
+
+const monthInput = $("#monthInput");
+const heroMonthLabel = $("#heroMonthLabel");
+
+const cardRemainder = $("#cardRemainder");
+const cardIncome = $("#cardIncome");
+const cardExpense = $("#cardExpense");
+const paidCount = $("#paidCount");
+const totalCount = $("#totalCount");
+
+const projectionGrid = $("#projectionGrid");
+
+const monthIncomeTotal = $("#monthIncomeTotal");
+const monthExpenseTotal = $("#monthExpenseTotal");
+const incomeEmpty = $("#incomeEmpty");
+const expenseEmpty = $("#expenseEmpty");
+const incomeList = $("#incomeList");
+const expenseRows = $("#expenseRows");
+
+const btnOpenModal = $("#btnOpenModal");
+const fabOpenModal = $("#fabOpenModal");
+const modalOverlay = $("#modalOverlay");
+const btnCloseModal = $("#btnCloseModal");
+const modalTabGasto = $("#modalTabGasto");
+const modalTabIngreso = $("#modalTabIngreso");
+
+const movementForm = $("#movementForm");
+const descInput = $("#descInput");
+const amountInput = $("#amountInput");
+const amountLabel = $("#amountLabel");
+const startMonthInput = $("#startMonthInput");
+const categorySelect = $("#categorySelect");
+
+const installmentsBox = $("#installmentsBox");
+const installmentsInput = $("#installmentsInput");
+const installmentsMath = $("#installmentsMath");
+const installmentsHint = $("#installmentsHint");
+
+// ---------- Tabs ----------
+function setView(which) {
+  const dash = which === "dashboard";
+  tabDashboard.classList.toggle("is-active", dash);
+  tabMiMes.classList.toggle("is-active", !dash);
+  tabDashboard.setAttribute("aria-selected", dash ? "true" : "false");
+  tabMiMes.setAttribute("aria-selected", dash ? "false" : "true");
+  viewDashboard.classList.toggle("is-active", dash);
+  viewMiMes.classList.toggle("is-active", !dash);
+}
+
+tabDashboard.addEventListener("click", () => setView("dashboard"));
+tabMiMes.addEventListener("click", () => setView("mimes"));
+
+// ---------- Modal ----------
+function openModal() {
+  modalOverlay.classList.add("is-open");
+  modalOverlay.setAttribute("aria-hidden", "false");
+  // reset form
+  descInput.value = "";
+  amountInput.value = "";
+  categorySelect.value = "Consumo General";
+  installmentsInput.value = 1;
+  startMonthInput.value = selectedMonth || monthInput.value;
+  setModalType(modalType);
+  updateInstallmentsUI();
+  setTimeout(() => descInput.focus(), 50);
+}
+function closeModal() {
+  modalOverlay.classList.remove("is-open");
+  modalOverlay.setAttribute("aria-hidden", "true");
+}
+
+btnOpenModal.addEventListener("click", openModal);
+fabOpenModal.addEventListener("click", openModal);
+btnCloseModal.addEventListener("click", closeModal);
+modalOverlay.addEventListener("click", (e) => {
+  if (e.target === modalOverlay) closeModal();
+});
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && modalOverlay.classList.contains("is-open")) closeModal();
+});
+
+function setModalType(type) {
+  modalType = type;
+  const isGasto = type === "gasto";
+  modalTabGasto.classList.toggle("is-active", isGasto);
+  modalTabIngreso.classList.toggle("is-active", !isGasto);
+  modalTabGasto.setAttribute("aria-selected", isGasto ? "true" : "false");
+  modalTabIngreso.setAttribute("aria-selected", isGasto ? "false" : "true");
+
+  amountLabel.textContent = isGasto ? "Monto" : "Monto";
+}
+
+modalTabGasto.addEventListener("click", () => setModalType("gasto"));
+modalTabIngreso.addEventListener("click", () => setModalType("ingreso"));
+
+// ---------- Installments behavior ----------
+function categoryHasInstallments(cat) {
+  return cat === "Tarjeta de Crédito" || cat === "Préstamo Personal";
+}
+function updateInstallmentsUI() {
+  const cat = categorySelect.value;
+  const show = categoryHasInstallments(cat);
+
+  installmentsBox.classList.toggle("is-hidden", !show);
+
+  const cuota = Number(amountInput.value || 0);
+  const n = Math.max(1, Number(installmentsInput.value || 1));
+  const total = cuota * n;
+  installmentsMath.textContent = `x ${moneyARS(cuota)} = Total ${moneyARS(total)}`;
+  installmentsHint.textContent = `El sistema generará automáticamente ${n} registros mensuales comenzando en ${startMonthInput.value || selectedMonth || "—"}.`;
+}
+
+categorySelect.addEventListener("change", () => {
+  if (!categoryHasInstallments(categorySelect.value)) {
+    installmentsInput.value = 1;
+  }
+  updateInstallmentsUI();
+});
+amountInput.addEventListener("input", updateInstallmentsUI);
+installmentsInput.addEventListener("input", updateInstallmentsUI);
+startMonthInput.addEventListener("change", updateInstallmentsUI);
+
+// ---------- Create movement ----------
+movementForm.addEventListener("submit", (e) => {
+  e.preventDefault();
+
+  const descripcion = (descInput.value || "").trim();
+  const monto = Number(amountInput.value || 0);
+  const mesInicio = startMonthInput.value;
+  const categoria = categorySelect.value;
+
+  if (!descripcion) return;
+  if (!mesInicio) return;
+  if (!(monto >= 0)) return;
+
+  const type = modalType === "ingreso" ? "ingreso" : "gasto";
+  const hasInst = categoryHasInstallments(categoria);
+  const cuotas = hasInst ? Math.max(1, Number(installmentsInput.value || 1)) : 1;
+
+  const data = loadMovements();
+  const baseCreatedAt = Date.now();
+
+  // Cuotas: el monto es valor de la cuota. Genera N registros (1 por mes).
+  const records = [];
+  for (let i = 0; i < cuotas; i++) {
+    records.push({
+      id: uid(),
+      type,
+      descripcion,
+      monto,
+      mes: addMonths(mesInicio, i),
+      categoria,
+      cuotas,
+      createdAt: baseCreatedAt
+    });
+  }
+
+  saveMovements([...data, ...records]);
+  closeModal();
+  renderAll();
+});
+
+// ---------- Delete movement ----------
+function deleteMovementById(id) {
+  const data = loadMovements();
+  const target = data.find(m => m.id === id);
+  if (!target) return;
+
+  const ok = confirm(`¿Eliminar "${target.descripcion}" (${moneyARS(target.monto)}) del mes ${monthToLabel(target.mes)}?`);
+  if (!ok) return;
+
+  const next = data.filter(m => m.id !== id);
+  saveMovements(next);
+  renderAll();
+}
+
+// Delegación de eventos (botones borrar)
+document.addEventListener("click", (e) => {
+  const btn = e.target.closest("[data-del-id]");
+  if (!btn) return;
+  const id = btn.getAttribute("data-del-id");
+  deleteMovementById(id);
+});
+
+// ---------- Month handling ----------
+function initMonth() {
+  const now = new Date();
+  const yyyy = now.getFullYear();
+  const mm = String(now.getMonth() + 1).padStart(2, "0");
+  selectedMonth = `${yyyy}-${mm}`;
+  monthInput.value = selectedMonth;
+  startMonthInput.value = selectedMonth;
+  heroMonthLabel.textContent = monthToLabel(selectedMonth);
+}
+
+monthInput.addEventListener("change", () => {
+  selectedMonth = monthInput.value;
+  heroMonthLabel.textContent = monthToLabel(selectedMonth);
+  // si modal está abierto, sincroniza mes inicio
+  if (modalOverlay.classList.contains("is-open")) {
+    startMonthInput.value = selectedMonth;
+    updateInstallmentsUI();
+  }
+  renderAll();
+});
+
+// ---------- Render ----------
+function sumByTypeForMonth(arr, month, type) {
+  return arr
+    .filter(m => m.mes === month && m.type === type)
+    .reduce((acc, m) => acc + Number(m.monto || 0), 0);
+}
+
+function renderProjection() {
+  projectionGrid.innerHTML = "";
+  // 6 meses desde el seleccionado
+  for (let i = 0; i < 6; i++) {
+    const m = addMonths(selectedMonth, i);
+    const income = sumByTypeForMonth(loadMovements(), m, "ingreso");
+    const expense = sumByTypeForMonth(loadMovements(), m, "gasto");
+    const rem = income - expense;
+
+    const col = document.createElement("div");
+    col.className = "proj-col";
+    col.innerHTML = `
+      <div class="proj-month">${monthToLabel(m)}</div>
+      <div class="proj-amt">${moneyARS(rem)}</div>
+      <div class="proj-sub">Ingresos: ${moneyARS(income)}<br/>Gastos: ${moneyARS(expense)}</div>
+    `;
+    projectionGrid.appendChild(col);
+  }
+}
+
+function renderDashboard() {
+  const data = loadMovements();
+  const income = sumByTypeForMonth(data, selectedMonth, "ingreso");
+  const expense = sumByTypeForMonth(data, selectedMonth, "gasto");
+  const remainder = income - expense;
+
+  cardIncome.textContent = moneyARS(income);
+  cardExpense.textContent = moneyARS(expense);
+  cardRemainder.textContent = moneyARS(remainder);
+
+  // "pagados de" (en este MVP asumimos todos los gastos como pagados)
+  const monthExpenses = data.filter(m => m.mes === selectedMonth && m.type === "gasto");
+  paidCount.textContent = String(monthExpenses.length);
+  totalCount.textContent = String(monthExpenses.length);
+
+  renderProjection();
+}
+
+function renderMiMes() {
+  const data = loadMovements();
+  const incomes = data
+    .filter(m => m.mes === selectedMonth && m.type === "ingreso")
+    .sort((a,b) => (a.createdAt||0) - (b.createdAt||0));
+  const expenses = data
+    .filter(m => m.mes === selectedMonth && m.type === "gasto")
+    .sort((a,b) => (a.createdAt||0) - (b.createdAt||0));
+
+  const incomeTotal = incomes.reduce((acc, m) => acc + Number(m.monto||0), 0);
+  const expenseTotal = expenses.reduce((acc, m) => acc + Number(m.monto||0), 0);
+
+  monthIncomeTotal.textContent = moneyARS(incomeTotal);
+  monthExpenseTotal.textContent = moneyARS(expenseTotal);
+
+  // Ingresos list
+  incomeList.innerHTML = "";
+  incomeEmpty.classList.toggle("hidden", incomes.length > 0);
+  if (incomes.length) {
+    incomes.forEach(m => {
+      const li = document.createElement("li");
+      li.className = "list-item";
+      li.innerHTML = `
+        <div>
+          <div class="li-title">${escapeHtml(m.descripcion)}</div>
+          <div class="li-sub">${escapeHtml(m.categoria)} · ${monthToLabel(m.mes)}</div>
+        </div>
+        <div class="li-right">
+          <div class="li-amt" style="color:var(--green)">${moneyARS(m.monto)}</div>
+          <button class="del-btn" type="button" title="Eliminar" data-del-id="${m.id}">🗑</button>
+        </div>
+      `;
+      incomeList.appendChild(li);
+    });
+  }
+
+  // Gastos rows
+  expenseRows.innerHTML = "";
+  expenseEmpty.classList.toggle("hidden", expenses.length > 0);
+  $("#expenseTable").classList.toggle("hidden", expenses.length === 0);
+
+  if (expenses.length) {
+    expenses.forEach(m => {
+      const row = document.createElement("div");
+      row.className = "tr";
+      row.innerHTML = `
+        <div class="td-left">
+          <div style="font-size:20px;font-weight:950">${escapeHtml(m.descripcion)}</div>
+          <div class="td-sub">${escapeHtml(m.categoria)} · ${monthToLabel(m.mes)}</div>
+        </div>
+        <div class="td-right-wrap">
+          <div class="td-right">${moneyARS(m.monto)}</div>
+          <button class="del-btn" type="button" title="Eliminar" data-del-id="${m.id}">🗑</button>
+        </div>
+      `;
+      expenseRows.appendChild(row);
+    });
+  }
+}
+
+function escapeHtml(str) {
+  return String(str || "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
+}
+
+function renderAll() {
+  heroMonthLabel.textContent = monthToLabel(selectedMonth);
+  renderDashboard();
+  renderMiMes();
+}
+
+// ---------- Init ----------
+(function init() {
+  ensureSeedIfEmpty();
+  initMonth();
+  renderAll();
+
+  // "Importar PDF" UI only
+  $("#btnImportPdf").addEventListener("click", () => {
+    alert("Importar PDF (UI): próximamente. Por ahora cargá los movimientos manualmente.");
+  });
+})();
