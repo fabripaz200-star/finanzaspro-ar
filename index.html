@@ -1,231 +1,217 @@
-{\rtf1\ansi\ansicpg1252\cocoartf2761
-\cocoatextscaling0\cocoaplatform0{\fonttbl\f0\fswiss\fcharset0 Helvetica;}
-{\colortbl;\red255\green255\blue255;}
-{\*\expandedcolortbl;;}
-\paperw11900\paperh16840\margl1440\margr1440\vieww11520\viewh8400\viewkind0
-\pard\tx720\tx1440\tx2160\tx2880\tx3600\tx4320\tx5040\tx5760\tx6480\tx7200\tx7920\tx8640\pardirnatural\partightenfactor0
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>FinanzasPro AR</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <!-- NAVBAR -->
+  <header class="navbar">
+    <div class="nav-left">
+      <div class="logo" aria-hidden="true">
+        <span class="logo-dot"></span>
+        <span class="logo-dot is-soft"></span>
+      </div>
+      <div class="brand">
+        <div class="brand-name">FinanzasPro</div>
+        <div class="brand-suffix">AR</div>
+      </div>
+    </div>
 
-\f0\fs24 \cf0 <!doctype html>\
-<html lang="es-AR">\
-<head>\
-  <meta charset="utf-8" />\
-  <meta name="viewport" content="width=device-width, initial-scale=1" />\
-  <title>FinanzasPro AR</title>\
-  <link rel="stylesheet" href="./styles.css" />\
-  <script defer src="./app.js"></script>\
-</head>\
-\
-<body>\
-  <header class="navbar">\
-    <div class="nav-left">\
-      <div class="logo">\
-        <span class="logo-dot"></span>\
-        <span class="logo-dot is-soft"></span>\
-      </div>\
-      <div class="brand">\
-        <span class="brand-name">FinanzasPro</span>\
-        <span class="brand-suffix">AR</span>\
-      </div>\
-    </div>\
-\
-    <div class="nav-center" role="tablist" aria-label="Navegaci\'f3n">\
-      <button class="tab is-active" data-view="dashboard" role="tab" aria-selected="true">\
-        <span class="tab-ico">\uc0\u55357 \u56520 </span> Dashboard\
-      </button>\
-      <button class="tab" data-view="month" role="tab" aria-selected="false">\
-        <span class="tab-ico">\uc0\u55357 \u56517 </span> Mi Mes\
-      </button>\
-    </div>\
-\
-    <div class="nav-right">\
-      <button class="btn btn-primary" id="btnAddMovementTop">\
-        <span class="btn-ico">\uc0\u65291 </span> Agregar Movimiento\
-      </button>\
-    </div>\
-  </header>\
-\
-  <main class="container">\
-    <section class="hero">\
-      <div>\
-        <h1 class="hero-title">Hola, Usuario</h1>\
-        <p class="hero-sub">Estado financiero para <strong id="selectedMonthLabel">\'97</strong></p>\
-      </div>\
-\
-      <div class="hero-actions">\
-        <label class="month-picker">\
-          <span class="month-label">Mes</span>\
-          <input id="monthInput" type="month" />\
-        </label>\
-\
-        <button class="btn btn-secondary" id="btnImportPdf">\
-          <span class="btn-ico">\uc0\u10515 </span> Importar PDF\
-        </button>\
-      </div>\
-    </section>\
-\
-    <!-- DASHBOARD -->\
-    <section id="viewDashboard" class="view is-active">\
-      <section class="cards">\
-        <article class="card card-dark">\
-          <div class="card-top">\
-            <span class="card-title">REMANENTE ESTIMADO</span>\
-            <span class="card-icon">\uc0\u55357 \u56508 </span>\
-          </div>\
-          <div class="card-amount" id="cardRemanente">$0</div>\
-          <div class="card-meta">Disponible para ahorro</div>\
-        </article>\
-\
-        <article class="card">\
-          <div class="card-top">\
-            <span class="card-title">INGRESOS</span>\
-            <span class="badge badge-green">\uc0\u8599 </span>\
-          </div>\
-          <div class="card-amount" id="cardIngresos">$0</div>\
-          <div class="card-meta">Total acumulado</div>\
-        </article>\
-\
-        <article class="card">\
-          <div class="card-top">\
-            <span class="card-title">GASTOS</span>\
-            <span class="badge badge-red">\uc0\u8600 </span>\
-          </div>\
-          <div class="card-amount" id="cardGastos">$0</div>\
-          <div class="card-meta" id="gastosMeta">0 pagados de 0</div>\
-        </article>\
-      </section>\
-\
-      <section class="panel">\
-        <div class="panel-head">\
-          <div class="panel-title">\
-            <span class="panel-ico">\uc0\u55357 \u56520 </span>\
-            Proyecci\'f3n Financiera (6 Meses)\
-          </div>\
-        </div>\
-\
-        <div class="projection" id="projectionGrid">\
-          <!-- cols por JS -->\
-        </div>\
-      </section>\
-    </section>\
-\
-    <!-- MI MES -->\
-    <section id="viewMonth" class="view">\
-      <section class="panel">\
-        <div class="panel-head">\
-          <div class="panel-title is-green">\
-            <span class="panel-ico">\uc0\u8599 </span>\
-            Ingresos\
-          </div>\
-          <div class="panel-total is-green" id="monthIngresosTotal">$0</div>\
-        </div>\
-\
-        <div class="panel-body">\
-          <p class="empty" id="monthIngresosEmpty">No hay ingresos registrados.</p>\
-          <ul class="list" id="monthIngresosList"></ul>\
-        </div>\
-      </section>\
-\
-      <section class="panel">\
-        <div class="panel-head">\
-          <div class="panel-title is-red">\
-            <span class="panel-ico">\uc0\u8600 </span>\
-            Gastos y Obligaciones\
-          </div>\
-          <div class="panel-total is-red" id="monthGastosTotal">$0</div>\
-        </div>\
-\
-        <div class="panel-body">\
-          <div class="table">\
-            <div class="th">\
-              <div>DETALLE</div>\
-              <div class="th-right">MONTO</div>\
-            </div>\
-\
-            <p class="empty" id="monthGastosEmpty">Todo limpio por aqu\'ed.</p>\
-\
-            <div id="monthGastosRows"></div>\
-          </div>\
-        </div>\
-      </section>\
-    </section>\
-  </main>\
-\
-  <!-- FAB -->\
-  <button class="fab" id="fabAdd" title="Agregar Movimiento">+</button>\
-\
-  <!-- MODAL -->\
-  <div class="modal-overlay" id="modalOverlay" aria-hidden="true">\
-    <div class="modal" role="dialog" aria-modal="true" aria-label="Nuevo Movimiento">\
-      <div class="modal-head">\
-        <h3 class="modal-title">Nuevo Movimiento</h3>\
-        <button class="icon-btn" id="btnCloseModal" aria-label="Cerrar">\uc0\u10005 </button>\
-      </div>\
-\
-      <div class="modal-tabs" role="tablist" aria-label="Tipo de movimiento">\
-        <button class="modal-tab is-active" data-type="gasto" role="tab" aria-selected="true">\
-          Gasto / Compra\
-        </button>\
-        <button class="modal-tab" data-type="ingreso" role="tab" aria-selected="false">\
-          Ingreso\
-        </button>\
-      </div>\
-\
-      <form class="form" id="movementForm">\
-        <div class="field">\
-          <label for="descInput">Descripci\'f3n</label>\
-          <input id="descInput" type="text" placeholder="Ej: Supermercado, TV Led..." />\
-        </div>\
-\
-        <div class="grid-2">\
-          <div class="field">\
-            <label id="montoLabel" for="amountInput">Monto</label>\
-            <input id="amountInput" type="number" step="0.01" placeholder="$ 0.00" />\
-          </div>\
-\
-          <div class="field">\
-            <label for="startMonthInput">Mes Inicio</label>\
-            <input id="startMonthInput" type="month" />\
-          </div>\
-        </div>\
-\
-        <div class="field">\
-          <label for="categorySelect">Categor\'eda</label>\
-          <select id="categorySelect">\
-            <option>Consumo General</option>\
-            <option>Gasto Fijo (Alquiler/Servicios)</option>\
-            <option>Tarjeta de Cr\'e9dito</option>\
-            <option>Pr\'e9stamo Personal</option>\
-          </select>\
-        </div>\
-\
-        <div class="installments is-hidden" id="installmentsBox">\
-          <div class="installments-head">\
-            <span class="installments-ico">\uc0\u55357 \u56499 </span>\
-            <div>\
-              <div class="installments-title">Configuraci\'f3n de Cuotas</div>\
-              <div class="installments-sub">El monto se interpreta como valor de la cuota.</div>\
-            </div>\
-          </div>\
-\
-          <div class="installments-row">\
-            <div class="field small">\
-              <label for="installmentsInput">CANT. CUOTAS</label>\
-              <input id="installmentsInput" type="number" min="1" max="120" value="1" />\
-            </div>\
-\
-            <div class="installments-math">\
-              <span>x <strong id="installmentValue">$0</strong></span>\
-              <span>= Total <strong id="installmentTotal">$0</strong></span>\
-            </div>\
-          </div>\
-\
-          <p class="installments-hint" id="installmentsHint"></p>\
-        </div>\
-\
-        <button class="btn btn-dark" type="submit">Guardar Movimiento</button>\
-      </form>\
-    </div>\
-  </div>\
-</body>\
-</html>\
-}
+    <div class="nav-center" role="tablist" aria-label="Navegación">
+      <button class="tab is-active" id="tabDashboard" type="button" role="tab" aria-selected="true">
+        <span class="tab-ico">📈</span> Dashboard
+      </button>
+      <button class="tab" id="tabMiMes" type="button" role="tab" aria-selected="false">
+        <span class="tab-ico">📅</span> Mi Mes
+      </button>
+    </div>
+
+    <div class="nav-right">
+      <button class="btn btn-primary" id="btnOpenModal" type="button">
+        <span class="btn-ico">＋</span> Agregar Movimiento
+      </button>
+    </div>
+  </header>
+
+  <main class="container">
+    <!-- HERO -->
+    <section class="hero">
+      <div>
+        <h1 class="hero-title">Hola, Usuario</h1>
+        <p class="hero-sub">Estado financiero para <span id="heroMonthLabel">—</span></p>
+      </div>
+
+      <div class="hero-actions">
+        <div class="month-picker">
+          <div style="display:flex;flex-direction:column;gap:2px;width:100%">
+            <div class="month-label">Mes</div>
+            <input id="monthInput" type="month" />
+          </div>
+        </div>
+        <button class="btn btn-secondary" id="btnImportPdf" type="button">⤴︎ Importar PDF</button>
+      </div>
+    </section>
+
+    <!-- DASHBOARD VIEW -->
+    <section class="view is-active" id="viewDashboard">
+      <section class="cards">
+        <article class="card card-dark">
+          <div class="card-top">
+            <div class="card-title">REMANENTE ESTIMADO</div>
+            <div class="card-icon" aria-hidden="true">🪙</div>
+          </div>
+          <div class="card-amount" id="cardRemainder">$0</div>
+          <div class="card-meta">Disponible para ahorro</div>
+        </article>
+
+        <article class="card">
+          <div class="card-top">
+            <div class="card-title">INGRESOS</div>
+            <div class="badge badge-green" aria-hidden="true">↗</div>
+          </div>
+          <div class="card-amount" id="cardIncome">$0</div>
+          <div class="card-meta">Total acumulado</div>
+        </article>
+
+        <article class="card">
+          <div class="card-top">
+            <div class="card-title">GASTOS</div>
+            <div class="badge badge-red" aria-hidden="true">↘</div>
+          </div>
+          <div class="card-amount" id="cardExpense">$0</div>
+          <div class="card-meta"><span id="paidCount">0</span> pagados de <span id="totalCount">0</span></div>
+        </article>
+      </section>
+
+      <section class="panel">
+        <div class="panel-head">
+          <div class="panel-title">
+            <span class="panel-ico" aria-hidden="true">📈</span>
+            Proyección Financiera (6 Meses)
+          </div>
+          <div class="panel-total" id="projHint" style="color:#64748b;font-size:14px;font-weight:850">
+            (estimada)
+          </div>
+        </div>
+        <div class="projection" id="projectionGrid"></div>
+      </section>
+    </section>
+
+    <!-- MI MES VIEW -->
+    <section class="view" id="viewMiMes">
+      <section class="panel">
+        <div class="panel-head">
+          <div class="panel-title is-green">
+            <span class="panel-ico" aria-hidden="true">↗</span> Ingresos
+          </div>
+          <div class="panel-total is-green" id="monthIncomeTotal">$0</div>
+        </div>
+        <div class="panel-body">
+          <div id="incomeEmpty" class="empty hidden">No hay ingresos registrados.</div>
+          <ul id="incomeList" class="list"></ul>
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-head panel-head--compact">
+          <div class="panel-title is-red">
+            <span class="panel-ico" aria-hidden="true">↘</span> Gastos y Obligaciones
+          </div>
+          <div class="panel-total is-red" id="monthExpenseTotal">$0</div>
+        </div>
+        <div class="panel-body">
+          <div id="expenseEmpty" class="empty hidden">Todo limpio por aquí.</div>
+
+          <div class="table" id="expenseTable">
+            <div class="th">
+              <div>DETALLE</div>
+              <div class="th-right">MONTO</div>
+            </div>
+            <div id="expenseRows"></div>
+          </div>
+        </div>
+      </section>
+    </section>
+  </main>
+
+  <!-- FAB (mobile quick add) -->
+  <button class="fab" id="fabOpenModal" type="button" aria-label="Agregar movimiento">+</button>
+
+  <!-- MODAL -->
+  <div class="modal-overlay" id="modalOverlay" aria-hidden="true">
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+      <div class="modal-head">
+        <h2 class="modal-title" id="modalTitle">Nuevo Movimiento</h2>
+        <button class="icon-btn" id="btnCloseModal" type="button" aria-label="Cerrar">✕</button>
+      </div>
+
+      <div class="modal-tabs" role="tablist" aria-label="Tipo de movimiento">
+        <button class="modal-tab is-active" id="modalTabGasto" type="button" role="tab" aria-selected="true">
+          Gasto / Compra
+        </button>
+        <button class="modal-tab" id="modalTabIngreso" type="button" role="tab" aria-selected="false">
+          Ingreso
+        </button>
+      </div>
+
+      <form class="form" id="movementForm">
+        <div class="field">
+          <label for="descInput">Descripción</label>
+          <input id="descInput" type="text" placeholder="Ej: Supermercado, TV Led..." required />
+        </div>
+
+        <div class="grid-2">
+          <div class="field">
+            <label for="amountInput" id="amountLabel">Monto</label>
+            <input id="amountInput" type="number" inputmode="decimal" step="0.01" min="0" placeholder="$ 0.00" required />
+          </div>
+
+          <div class="field">
+            <label for="startMonthInput">Mes inicio</label>
+            <input id="startMonthInput" type="month" required />
+          </div>
+        </div>
+
+        <div class="field">
+          <label for="categorySelect">Categoría</label>
+          <select id="categorySelect" required>
+            <option>Consumo General</option>
+            <option>Gasto Fijo (Alquiler/Servicios)</option>
+            <option>Tarjeta de Crédito</option>
+            <option>Préstamo Personal</option>
+          </select>
+        </div>
+
+        <div class="installments is-hidden" id="installmentsBox">
+          <div class="installments-head">
+            <div class="installments-ico" aria-hidden="true">💳</div>
+            <div>
+              <div class="installments-title">Configuración de Cuotas</div>
+              <div class="installments-sub">El monto se interpreta como valor de la cuota</div>
+            </div>
+          </div>
+
+          <div class="installments-row">
+            <div class="field small">
+              <label for="installmentsInput">CANT. CUOTAS</label>
+              <input id="installmentsInput" type="number" min="1" step="1" value="1" />
+            </div>
+            <div class="installments-math" id="installmentsMath">x $0 = Total $0</div>
+          </div>
+
+          <p class="installments-hint" id="installmentsHint">
+            El sistema generará automáticamente N registros mensuales comenzando en YYYY-MM.
+          </p>
+        </div>
+
+        <button class="btn btn-dark" id="btnSaveMovement" type="submit">Guardar Movimiento</button>
+      </form>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
