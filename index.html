@@ -1,4 +1,3 @@
-<!-- index.html -->
 <!doctype html>
 <html lang="es-AR">
 <head>
@@ -49,9 +48,18 @@
           <input id="monthInput" type="month" />
         </label>
 
-        <button id="btnImportPDF" class="btn btn-ghost" type="button">
-          <span class="btn-ic">↗</span> Importar PDF
-        </button>
+        <!-- NUEVO: Import / Export -->
+        <div class="io">
+          <button id="btnExport" class="btn btn-ghost" type="button" title="Descargar backup">
+            <span class="btn-ic">⬇</span> Exportar
+          </button>
+
+          <button id="btnImport" class="btn btn-ghost" type="button" title="Cargar backup">
+            <span class="btn-ic">↗</span> Importar
+          </button>
+
+          <input id="fileImport" type="file" accept="application/json" class="hidden" />
+        </div>
       </div>
     </section>
 
@@ -94,9 +102,7 @@
           </div>
         </div>
 
-        <div class="projection" id="projectionGrid">
-          <!-- JS -->
-        </div>
+        <div class="projection" id="projectionGrid"></div>
       </section>
     </section>
 
@@ -166,7 +172,7 @@
 
         <div class="row">
           <div class="field">
-            <label for="startMonthInput">Mes inicio</label>
+            <label for="startMonthInput">Mes</label>
             <input id="startMonthInput" type="month" />
           </div>
 
@@ -189,9 +195,7 @@
             <div class="installments-math" id="installmentsMath">x $0 = Total $0</div>
           </div>
 
-          <p class="installments-hint" id="installmentsHint">
-            El sistema generará automáticamente N registros mensuales comenzando en YYYY-MM.
-          </p>
+          <p class="installments-hint" id="installmentsHint"></p>
         </div>
 
         <button class="btn btn-primary btn-block" id="btnSaveMovement" type="submit">Guardar Movimiento</button>
