@@ -1,3 +1,4 @@
+/* app.js */
 const STORAGE_KEY = "finanzaspro_ar_v1";
 const ENABLE_SEED = true;
 
@@ -141,7 +142,6 @@ function groupByMonth(ymList) {
   const map = new Map();
   ymList.forEach(ym => map.set(ym, { ym, income: 0, expense: 0, balance: 0 }));
 
-  // Solo suma si el movimiento pertenece a ese mes (no repite ingresos)
   for (const m of state.movements) {
     if (!map.has(m.mes)) continue;
     const row = map.get(m.mes);
@@ -149,6 +149,7 @@ function groupByMonth(ymList) {
     if (m.type === "income") row.income += amt;
     if (m.type === "expense") row.expense += amt;
   }
+
   for (const row of map.values()) row.balance = row.income - row.expense;
   return Array.from(map.values());
 }
@@ -360,7 +361,7 @@ function deleteMovement(id) {
   }
 }
 
-/** IMPORT / EXPORT (REAL) */
+/** IMPORT / EXPORT */
 function exportBackup() {
   const payload = {
     app: "FinanzasPro AR",
@@ -386,7 +387,6 @@ function exportBackup() {
 }
 
 function normalizeImportedMovement(m) {
-  // Permite importar backups viejos con campos faltantes
   const clean = { ...m };
 
   clean.id = clean.id || uid();
@@ -394,12 +394,10 @@ function normalizeImportedMovement(m) {
   clean.descripcion = String(clean.descripcion || "").trim() || "(Sin descripción)";
   clean.monto = Number(clean.monto) || 0;
 
-  // mes: intenta corregir si viene vacío
   if (!/^\d{4}-\d{2}$/.test(String(clean.mes || ""))) {
     clean.mes = state.selectedMonth;
   }
 
-  // categoria default según type
   if (!clean.categoria) clean.categoria = (clean.type === "income") ? "Extra" : "Consumo General";
 
   clean.planId = clean.planId ?? null;
@@ -422,7 +420,6 @@ function importBackupFromFile(file) {
 
       const cleanList = incoming.map(normalizeImportedMovement);
 
-      // Elegir modo: reemplazar o sumar
       const replace = confirm(
         "¿Querés REEMPLAZAR toda tu data actual por este backup?\n\nOK = Reemplazar\nCancelar = Sumar (merge)"
       );
@@ -430,7 +427,6 @@ function importBackupFromFile(file) {
       if (replace) {
         state.movements = cleanList;
       } else {
-        // merge por id (si existe, no duplica)
         const byId = new Map(state.movements.map(m => [m.id, m]));
         for (const m of cleanList) {
           if (!byId.has(m.id)) byId.set(m.id, m);
@@ -512,7 +508,6 @@ function renderMonthView() {
   $("monthIncomeTotal").textContent = formatARS(incTotal);
   $("monthExpenseTotal").textContent = formatARS(expTotal);
 
-  // incomes
   const emptyIncome = $("emptyIncome");
   const incomeList = $("incomeList");
   incomeList.innerHTML = "";
@@ -524,7 +519,6 @@ function renderMonthView() {
     for (const m of incomes) incomeList.appendChild(renderIncomeItem(m));
   }
 
-  // expenses grouped
   const emptyExpense = $("emptyExpense");
   const groups = $("expenseGroups");
   groups.innerHTML = "";
@@ -784,12 +778,10 @@ function bindEvents() {
 
   // Export / Import
   $("btnExport").addEventListener("click", exportBackup);
-
   $("btnImport").addEventListener("click", () => {
     $("fileImport").value = "";
     $("fileImport").click();
   });
-
   $("fileImport").addEventListener("change", (e) => {
     const file = e.target.files && e.target.files[0];
     if (!file) return;
