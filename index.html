@@ -1,93 +1,89 @@
+<!-- index.html -->
 <!doctype html>
 <html lang="es-AR">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>FinanzasPro AR</title>
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
   <!-- NAVBAR -->
-  <header class="topbar">
-    <div class="brand">
-      <div class="brand-mark" aria-hidden="true">≡</div>
-      <div class="brand-text">
-        <div class="brand-name">FinanzasPro <span>AR</span></div>
+  <header class="nav">
+    <div class="nav-left">
+      <div class="logo" aria-hidden="true">
+        <span class="logo-bars"></span>
+      </div>
+      <div class="brand">
+        <div class="brand-name">FinanzasPro <span class="brand-muted">AR</span></div>
       </div>
     </div>
 
-    <nav class="tabs" aria-label="Navegación">
-      <button class="tab active" id="tabDashboard" type="button">
-        <span class="tab-ic" aria-hidden="true">📈</span> Dashboard
+    <div class="nav-center" role="tablist" aria-label="Vistas">
+      <button id="tabDashboard" class="tab active" role="tab" aria-selected="true" type="button">
+        <span class="tab-ic">📈</span> Dashboard
       </button>
-      <button class="tab" id="tabMonth" type="button">
-        <span class="tab-ic" aria-hidden="true">📅</span> Mi Mes
+      <button id="tabMonth" class="tab" role="tab" aria-selected="false" type="button">
+        <span class="tab-ic">📅</span> Mi Mes
       </button>
-    </nav>
+    </div>
 
-    <div class="topbar-actions">
-      <button class="btn btn-primary" id="btnOpenModal" type="button">
-        <span aria-hidden="true">＋</span> Agregar Movimiento
+    <div class="nav-right">
+      <button id="btnOpenModal" class="btn btn-primary" type="button">
+        <span class="btn-ic">＋</span> Agregar Movimiento
       </button>
     </div>
   </header>
 
+  <!-- MAIN -->
   <main class="container">
-    <!-- HEADER -->
     <section class="hero">
       <div class="hero-left">
-        <h1>Hola, Usuario</h1>
-        <p class="hero-sub">Estado financiero para <strong id="heroMonthLabel">—</strong></p>
+        <h1 class="title">Hola, Usuario</h1>
+        <p class="subtitle" id="subtitleMonth">Estado financiero para —</p>
       </div>
 
       <div class="hero-right">
-        <div class="controls">
-          <label class="month-picker">
-            <span class="sr-only">Mes</span>
-            <input id="monthInput" type="month" />
-          </label>
-          <button class="btn btn-secondary" type="button" id="btnImportPdf">
-            <span aria-hidden="true">⤴</span> Importar PDF
-          </button>
-        </div>
+        <label class="monthPicker" aria-label="Selector de mes">
+          <span class="monthLabel" id="monthPretty">Mes</span>
+          <input id="monthInput" type="month" />
+        </label>
+
+        <button id="btnImportPDF" class="btn btn-ghost" type="button">
+          <span class="btn-ic">↗</span> Importar PDF
+        </button>
       </div>
     </section>
 
     <!-- DASHBOARD VIEW -->
     <section id="viewDashboard">
-      <section class="cards">
-        <article class="card card-dark">
+      <section class="kpis">
+        <div class="card card-dark">
           <div class="card-top">
-            <div>
-              <div class="card-kicker">REMANENTE ESTIMADO</div>
-              <div class="card-value" id="remainValue">$0</div>
-              <div class="card-note">Disponible para ahorro</div>
-            </div>
-            <div class="card-icon" aria-hidden="true">💳</div>
+            <div class="card-label">REMANENTE ESTIMADO</div>
+            <div class="chip">💳</div>
           </div>
-        </article>
+          <div class="card-value" id="kpiBalance">$0</div>
+          <div class="card-sub">Disponible para ahorro</div>
+        </div>
 
-        <article class="card">
+        <div class="card">
           <div class="card-top">
-            <div>
-              <div class="card-kicker">INGRESOS</div>
-              <div class="card-value" id="incomeValue">$0</div>
-              <div class="card-note">Total acumulado</div>
-            </div>
-            <div class="pill pill-green" aria-hidden="true">↗</div>
+            <div class="card-label">INGRESOS</div>
+            <div class="chip chip-green">↗</div>
           </div>
-        </article>
+          <div class="card-value" id="kpiIncome">$0</div>
+          <div class="card-sub">Total acumulado</div>
+        </div>
 
-        <article class="card">
+        <div class="card">
           <div class="card-top">
-            <div>
-              <div class="card-kicker">GASTOS</div>
-              <div class="card-value" id="expenseValue">$0</div>
-              <div class="card-note" id="paidMeta">0 pagados de 0</div>
-            </div>
-            <div class="pill pill-red" aria-hidden="true">↘</div>
+            <div class="card-label">GASTOS</div>
+            <div class="chip chip-red">↘</div>
           </div>
-        </article>
+          <div class="card-value" id="kpiExpense">$0</div>
+          <div class="card-sub"><span id="kpiPaid">0</span> pagados de <span id="kpiTotalOps">0</span></div>
+        </div>
       </section>
 
       <section class="panel">
@@ -98,13 +94,8 @@
           </div>
         </div>
 
-        <div class="projection-grid" id="projectionGrid">
-          <div class="proj-card"></div>
-          <div class="proj-card"></div>
-          <div class="proj-card"></div>
-          <div class="proj-card"></div>
-          <div class="proj-card"></div>
-          <div class="proj-card"></div>
+        <div class="projection" id="projectionGrid">
+          <!-- JS -->
         </div>
       </section>
     </section>
@@ -112,7 +103,7 @@
     <!-- MONTH VIEW -->
     <section id="viewMonth" class="hidden">
       <section class="panel">
-        <div class="panel-head panel-head-compact">
+        <div class="panel-head">
           <div class="panel-title green">
             <span class="panel-ic" aria-hidden="true">↗</span>
             Ingresos
@@ -120,13 +111,14 @@
           <div class="panel-total green" id="monthIncomeTotal">$0</div>
         </div>
 
-        <div class="panel-body" id="monthIncomeBody">
-          <!-- items -->
+        <div class="panel-body">
+          <div id="emptyIncome" class="empty">No hay ingresos registrados.</div>
+          <div id="incomeList" class="list"></div>
         </div>
       </section>
 
       <section class="panel">
-        <div class="panel-head panel-head-compact">
+        <div class="panel-head panel-head--compact">
           <div class="panel-title red">
             <span class="panel-ic" aria-hidden="true">↘</span>
             Gastos y Obligaciones
@@ -134,62 +126,58 @@
           <div class="panel-total red" id="monthExpenseTotal">$0</div>
         </div>
 
-        <div class="table">
-          <div class="table-head">
-            <div class="th">DETALLE</div>
-            <div class="th right">MONTO</div>
-          </div>
-          <div class="table-body" id="monthExpenseBody">
-            <!-- rows -->
-          </div>
+        <div class="panel-body">
+          <div id="emptyExpense" class="empty">Todo limpio por aquí.</div>
+          <div id="expenseGroups"></div>
         </div>
       </section>
     </section>
-
-    <!-- FLOATING QUICK ADD (opcional, UI) -->
-    <button class="fab" id="fabOpenModal" aria-label="Agregar movimiento">
-      ＋
-    </button>
   </main>
 
-  <!-- MODAL -->
-  <div class="modal-overlay hidden" id="modalOverlay" aria-hidden="true">
-    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+  <!-- Floating Action Button -->
+  <button id="fabOpenModal" class="fab" type="button" aria-label="Agregar movimiento">
+    <span>＋</span>
+  </button>
+
+  <!-- MODAL: Nuevo/Editar Movimiento -->
+  <div id="overlayMove" class="overlay hidden" role="dialog" aria-modal="true" aria-label="Nuevo Movimiento">
+    <div class="modal">
       <div class="modal-head">
-        <h2 id="modalTitle">Nuevo Movimiento</h2>
-        <button class="icon-btn" id="btnCloseModal" type="button" aria-label="Cerrar">✕</button>
+        <div class="modal-title" id="modalTitle">Nuevo Movimiento</div>
+        <button id="btnCloseModal" class="iconBtn" type="button" aria-label="Cerrar">✕</button>
       </div>
 
-      <div class="modal-tabs" role="tablist">
-        <button class="modal-tab active" id="modalTabExpense" type="button" data-type="gasto">Gasto / Compra</button>
-        <button class="modal-tab" id="modalTabIncome" type="button" data-type="ingreso">Ingreso</button>
+      <div class="modal-tabs" role="tablist" aria-label="Tipo de movimiento">
+        <button id="tabExpense" class="modal-tab active" role="tab" aria-selected="true" type="button">Gasto / Compra</button>
+        <button id="tabIncome" class="modal-tab" role="tab" aria-selected="false" type="button">Ingreso</button>
       </div>
 
-      <form id="movementForm" class="form">
+      <form id="moveForm" class="form">
         <div class="field">
           <label for="descInput">Descripción</label>
-          <input id="descInput" type="text" placeholder="Ej: Supermercado, TV Led..." autocomplete="off" required />
+          <input id="descInput" type="text" placeholder="Ej: Supermercado / Sueldo / Cliente..." autocomplete="off" />
+        </div>
+
+        <div class="field">
+          <label for="amountInput">Monto</label>
+          <input id="amountInput" type="number" inputmode="decimal" placeholder="0" min="0" step="1" />
+          <div class="hint" id="amountHint">Monto del gasto</div>
         </div>
 
         <div class="row">
           <div class="field">
-            <label for="amountInput" id="amountLabel">Monto</label>
-            <input id="amountInput" type="number" min="0" step="0.01" placeholder="0.00" required />
+            <label for="startMonthInput">Mes inicio</label>
+            <input id="startMonthInput" type="month" />
           </div>
 
           <div class="field">
-            <label for="startMonthInput">Mes Inicio</label>
-            <input id="startMonthInput" type="month" required />
+            <label for="categorySelect">Categoría</label>
+            <select id="categorySelect"></select>
           </div>
         </div>
 
-        <div class="field">
-          <label for="categorySelect">Categoría</label>
-          <select id="categorySelect" required></select>
-        </div>
-
-        <!-- INSTALLMENTS -->
-        <div class="installments hidden" id="installmentsBox">
+        <!-- Cuotas -->
+        <div id="installmentsBlock" class="installments hidden">
           <div class="installments-title">Configuración de Cuotas</div>
           <div class="installments-sub">El monto se interpreta como valor de la cuota</div>
 
@@ -206,7 +194,7 @@
           </p>
         </div>
 
-        <button class="btn btn-dark" id="btnSaveMovement" type="submit">Guardar Movimiento</button>
+        <button class="btn btn-primary btn-block" id="btnSaveMovement" type="submit">Guardar Movimiento</button>
       </form>
     </div>
   </div>
