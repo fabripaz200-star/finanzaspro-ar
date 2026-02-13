@@ -1,13 +1,4 @@
-/* app.js
-   FinanzasPro AR - Vanilla JS (v2)
-   + Editar movimientos (ingresos/gastos)
-   + Gastos agrupados por categoría con total por categoría
-   + Proyección 6 meses: NO repite ingresos (solo si están cargados en ese mes)
-*/
-
 const STORAGE_KEY = "finanzaspro_ar_v1";
-
-/** Seed opcional */
 const ENABLE_SEED = true;
 
 const EXPENSE_CATEGORIES = [
@@ -98,10 +89,7 @@ function ensureSeed() {
   const current = loadMovements();
   if (current.length > 0) return;
 
-  const nowMonth = state.selectedMonth || (() => {
-    const now = new Date();
-    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
-  })();
+  const nowMonth = state.selectedMonth;
 
   const seed = [
     {
@@ -139,9 +127,7 @@ function getMonthMovements(ym) {
 }
 
 function sumByType(list, type) {
-  return list
-    .filter(m => m.type === type)
-    .reduce((acc, m) => acc + (Number(m.monto) || 0), 0);
+  return list.filter(m => m.type === type).reduce((acc, m) => acc + (Number(m.monto) || 0), 0);
 }
 
 function buildMonthTotals(ym) {
@@ -155,7 +141,7 @@ function groupByMonth(ymList) {
   const map = new Map();
   ymList.forEach(ym => map.set(ym, { ym, income: 0, expense: 0, balance: 0 }));
 
-  // Solo suma si el movimiento realmente pertenece a ese mes
+  // Solo suma si el movimiento pertenece a ese mes (no repite ingresos)
   for (const m of state.movements) {
     if (!map.has(m.mes)) continue;
     const row = map.get(m.mes);
@@ -163,11 +149,7 @@ function groupByMonth(ymList) {
     if (m.type === "income") row.income += amt;
     if (m.type === "expense") row.expense += amt;
   }
-
-  for (const row of map.values()) {
-    row.balance = row.income - row.expense;
-  }
-
+  for (const row of map.values()) row.balance = row.income - row.expense;
   return Array.from(map.values());
 }
 
@@ -177,7 +159,7 @@ function initialsFromDesc(desc) {
   return s[0].toUpperCase();
 }
 
-/** UI VIEWS */
+/** VIEW */
 function setView(view) {
   state.view = view;
 
@@ -193,7 +175,7 @@ function setView(view) {
   render();
 }
 
-/** MODALS */
+/** MODAL */
 function openOverlay(el) {
   el.classList.remove("hidden");
   document.body.style.overflow = "hidden";
@@ -265,7 +247,7 @@ function closeMoveModal() {
   closeOverlay($("overlayMove"));
 }
 
-/** MOVE TYPE + CATEGORIES */
+/** TYPE + CATEGORIES */
 function setMoveType(type) {
   state.moveType = type;
 
@@ -286,10 +268,7 @@ function setMoveType(type) {
     sel.appendChild(opt);
   }
 
-  $("amountHint").textContent = (type === "income")
-    ? "Monto del ingreso"
-    : "Monto del gasto";
-
+  $("amountHint").textContent = (type === "income") ? "Monto del ingreso" : "Monto del gasto";
   updateInstallmentsUI();
 }
 
@@ -305,8 +284,7 @@ function updateInstallmentsUI() {
   $("installmentsMath").textContent = `x ${formatARS(cuota)} = Total ${formatARS(cuota * n)}`;
 
   const start = $("startMonthInput").value || state.selectedMonth;
-  $("installmentsHint").textContent =
-    `El sistema generará automáticamente ${n} registros mensuales comenzando en ${start}.`;
+  $("installmentsHint").textContent = `El sistema generará automáticamente ${n} registros mensuales comenzando en ${start}.`;
 }
 
 /** CRUD */
@@ -382,12 +360,98 @@ function deleteMovement(id) {
   }
 }
 
+/** IMPORT / EXPORT (REAL) */
+function exportBackup() {
+  const payload = {
+    app: "FinanzasPro AR",
+    version: 1,
+    exportedAt: new Date().toISOString(),
+    movements: state.movements,
+  };
+
+  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+
+  const d = new Date();
+  const name = `finanzaspro-backup-${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}.json`;
+
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = name;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+
+  URL.revokeObjectURL(url);
+}
+
+function normalizeImportedMovement(m) {
+  // Permite importar backups viejos con campos faltantes
+  const clean = { ...m };
+
+  clean.id = clean.id || uid();
+  clean.type = clean.type === "income" ? "income" : "expense";
+  clean.descripcion = String(clean.descripcion || "").trim() || "(Sin descripción)";
+  clean.monto = Number(clean.monto) || 0;
+
+  // mes: intenta corregir si viene vacío
+  if (!/^\d{4}-\d{2}$/.test(String(clean.mes || ""))) {
+    clean.mes = state.selectedMonth;
+  }
+
+  // categoria default según type
+  if (!clean.categoria) clean.categoria = (clean.type === "income") ? "Extra" : "Consumo General";
+
+  clean.planId = clean.planId ?? null;
+  clean.installmentIndex = clean.installmentIndex ?? null;
+  clean.installmentsTotal = clean.installmentsTotal ?? null;
+  clean.createdAt = clean.createdAt ?? Date.now();
+
+  return clean;
+}
+
+function importBackupFromFile(file) {
+  const reader = new FileReader();
+  reader.onload = () => {
+    try {
+      const text = String(reader.result || "");
+      const json = JSON.parse(text);
+
+      const incoming = Array.isArray(json) ? json : (json.movements || []);
+      if (!Array.isArray(incoming)) throw new Error("Formato inválido");
+
+      const cleanList = incoming.map(normalizeImportedMovement);
+
+      // Elegir modo: reemplazar o sumar
+      const replace = confirm(
+        "¿Querés REEMPLAZAR toda tu data actual por este backup?\n\nOK = Reemplazar\nCancelar = Sumar (merge)"
+      );
+
+      if (replace) {
+        state.movements = cleanList;
+      } else {
+        // merge por id (si existe, no duplica)
+        const byId = new Map(state.movements.map(m => [m.id, m]));
+        for (const m of cleanList) {
+          if (!byId.has(m.id)) byId.set(m.id, m);
+        }
+        state.movements = Array.from(byId.values());
+      }
+
+      saveMovements(state.movements);
+      render();
+      alert("✅ Importación lista.");
+    } catch (err) {
+      alert("❌ No pude importar ese archivo. Asegurate de que sea un .json exportado por FinanzasPro.");
+    }
+  };
+  reader.readAsText(file);
+}
+
 /** RENDER */
 function renderHeader() {
   $("subtitleMonth").textContent = `Estado financiero para ${monthToLabel(state.selectedMonth)}`;
   $("monthInput").value = state.selectedMonth;
-
-  // monthPretty (badge label)
   $("monthPretty").textContent = monthToLabel(state.selectedMonth);
 }
 
@@ -448,7 +512,7 @@ function renderMonthView() {
   $("monthIncomeTotal").textContent = formatARS(incTotal);
   $("monthExpenseTotal").textContent = formatARS(expTotal);
 
-  // Incomes
+  // incomes
   const emptyIncome = $("emptyIncome");
   const incomeList = $("incomeList");
   incomeList.innerHTML = "";
@@ -457,12 +521,10 @@ function renderMonthView() {
     emptyIncome.style.display = "block";
   } else {
     emptyIncome.style.display = "none";
-    for (const m of incomes) {
-      incomeList.appendChild(renderIncomeItem(m));
-    }
+    for (const m of incomes) incomeList.appendChild(renderIncomeItem(m));
   }
 
-  // Expenses grouped by category
+  // expenses grouped
   const emptyExpense = $("emptyExpense");
   const groups = $("expenseGroups");
   groups.innerHTML = "";
@@ -472,7 +534,6 @@ function renderMonthView() {
   } else {
     emptyExpense.style.display = "none";
 
-    // group by category in defined order
     const byCat = new Map(EXPENSE_CATEGORIES.map(c => [c, []]));
     for (const e of expenses) {
       const c = e.categoria || "Consumo General";
@@ -483,7 +544,6 @@ function renderMonthView() {
     for (const cat of byCat.keys()) {
       const arr = byCat.get(cat);
       if (!arr || arr.length === 0) continue;
-
       const totalCat = arr.reduce((a, m) => a + (Number(m.monto) || 0), 0);
       groups.appendChild(renderExpenseGroup(cat, totalCat, arr));
     }
@@ -541,8 +601,7 @@ function renderIncomeItem(m) {
   del.title = "Eliminar";
   del.textContent = "🗑️";
   del.addEventListener("click", () => {
-    const ok = confirm("¿Eliminar este ingreso?");
-    if (!ok) return;
+    if (!confirm("¿Eliminar este ingreso?")) return;
     deleteMovement(m.id);
   });
 
@@ -594,10 +653,7 @@ function renderExpenseGroup(cat, totalCat, arr) {
   `;
 
   const tbody = document.createElement("tbody");
-
-  for (const m of arr) {
-    tbody.appendChild(renderExpenseRow(m));
-  }
+  for (const m of arr) tbody.appendChild(renderExpenseRow(m));
 
   table.appendChild(thead);
   table.appendChild(tbody);
@@ -618,11 +674,9 @@ function renderExpenseRow(m) {
 
   const sub = document.createElement("span");
   sub.className = "small";
-  if (m.planId && m.installmentIndex && m.installmentsTotal) {
-    sub.textContent = `Cuota ${m.installmentIndex}/${m.installmentsTotal}`;
-  } else {
-    sub.textContent = m.categoria || "Gasto";
-  }
+  sub.textContent = (m.planId && m.installmentIndex && m.installmentsTotal)
+    ? `Cuota ${m.installmentIndex}/${m.installmentsTotal}`
+    : (m.categoria || "Gasto");
 
   td1.appendChild(title);
   td1.appendChild(sub);
@@ -651,8 +705,7 @@ function renderExpenseRow(m) {
   del.title = "Eliminar";
   del.textContent = "🗑️";
   del.addEventListener("click", () => {
-    const ok = confirm("¿Eliminar este gasto?");
-    if (!ok) return;
+    if (!confirm("¿Eliminar este gasto?")) return;
     deleteMovement(m.id);
   });
 
@@ -714,38 +767,33 @@ function bindEvents() {
     if (monto <= 0) return alert("El monto debe ser mayor a 0.");
     if (!/^\d{4}-\d{2}$/.test(mesInicio)) return alert("Elegí un mes válido.");
 
-    // EDIT MODE
     if (editMode && editId) {
-      updateMovement(editId, {
-        descripcion,
-        monto,
-        mes: mesInicio,
-        categoria,
-      });
+      updateMovement(editId, { descripcion, monto, mes: mesInicio, categoria });
       closeMoveModal();
       return;
     }
 
-    // CREATE MODE
     let cuotas = 1;
     if (state.moveType === "expense" && INSTALLMENT_CATEGORIES.has(categoria)) {
       cuotas = Math.max(1, parseInt($("installmentsInput").value || "1", 10));
     }
 
-    addMovement({
-      type: state.moveType,
-      descripcion,
-      monto,
-      mesInicio,
-      categoria,
-      cuotas,
-    });
-
+    addMovement({ type: state.moveType, descripcion, monto, mesInicio, categoria, cuotas });
     closeMoveModal();
   });
 
-  $("btnImportPDF").addEventListener("click", () => {
-    alert("Importar PDF (UI): todavía sin parseo real.");
+  // Export / Import
+  $("btnExport").addEventListener("click", exportBackup);
+
+  $("btnImport").addEventListener("click", () => {
+    $("fileImport").value = "";
+    $("fileImport").click();
+  });
+
+  $("fileImport").addEventListener("change", (e) => {
+    const file = e.target.files && e.target.files[0];
+    if (!file) return;
+    importBackupFromFile(file);
   });
 
   window.addEventListener("keydown", (e) => {
