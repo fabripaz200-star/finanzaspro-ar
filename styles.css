@@ -651,3 +651,9 @@ body{
   .projection{ grid-template-columns: repeat(2, minmax(150px, 1fr)); }
   .item-title{ max-width: 220px; }
 }
+/* Import/Export buttons wrapper */
+.io{
+  display:flex;
+  gap:10px;
+  align-items:center;
+}
