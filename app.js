@@ -1,12 +1,14 @@
-/***********************
- * FinanzasPro AR - Vanilla JS
- ***********************/
+/* app.js
+   FinanzasPro AR - Vanilla JS (v2)
+   + Editar movimientos (ingresos/gastos)
+   + Gastos agrupados por categoría con total por categoría
+   + Proyección 6 meses: NO repite ingresos (solo si están cargados en ese mes)
+*/
 
-const STORAGE_KEY = "finanzaspro_ar_movements_v1";
-const STORAGE_MONTH_KEY = "finanzaspro_ar_selected_month_v1";
+const STORAGE_KEY = "finanzaspro_ar_v1";
 
-// Seed opcional
-const ENABLE_SEED = true; // <- ponelo en false si no querés ejemplos
+/** Seed opcional */
+const ENABLE_SEED = true;
 
 const EXPENSE_CATEGORIES = [
   "Consumo General",
@@ -21,96 +23,67 @@ const INCOME_CATEGORIES = [
   "Extra",
 ];
 
-// DOM
-const tabDashboard = document.getElementById("tabDashboard");
-const tabMonth = document.getElementById("tabMonth");
-const viewDashboard = document.getElementById("viewDashboard");
-const viewMonth = document.getElementById("viewMonth");
+const INSTALLMENT_CATEGORIES = new Set(["Tarjeta de Crédito", "Préstamo Personal"]);
 
-const monthInput = document.getElementById("monthInput");
-const heroMonthLabel = document.getElementById("heroMonthLabel");
+let state = {
+  view: "dashboard",
+  selectedMonth: "",
+  moveType: "expense",
+  movements: [],
+};
 
-const remainValue = document.getElementById("remainValue");
-const incomeValue = document.getElementById("incomeValue");
-const expenseValue = document.getElementById("expenseValue");
-const paidMeta = document.getElementById("paidMeta");
+let editMode = false;
+let editId = null;
 
-const projectionGrid = document.getElementById("projectionGrid");
-
-const monthIncomeTotal = document.getElementById("monthIncomeTotal");
-const monthExpenseTotal = document.getElementById("monthExpenseTotal");
-const monthIncomeBody = document.getElementById("monthIncomeBody");
-const monthExpenseBody = document.getElementById("monthExpenseBody");
-
-const btnOpenModal = document.getElementById("btnOpenModal");
-const fabOpenModal = document.getElementById("fabOpenModal");
-const btnCloseModal = document.getElementById("btnCloseModal");
-const modalOverlay = document.getElementById("modalOverlay");
-
-const modalTabExpense = document.getElementById("modalTabExpense");
-const modalTabIncome = document.getElementById("modalTabIncome");
-
-const movementForm = document.getElementById("movementForm");
-const descInput = document.getElementById("descInput");
-const amountInput = document.getElementById("amountInput");
-const amountLabel = document.getElementById("amountLabel");
-const startMonthInput = document.getElementById("startMonthInput");
-const categorySelect = document.getElementById("categorySelect");
-
-const installmentsBox = document.getElementById("installmentsBox");
-const installmentsInput = document.getElementById("installmentsInput");
-const installmentsMath = document.getElementById("installmentsMath");
-const installmentsHint = document.getElementById("installmentsHint");
-
-// State
-let currentView = "dashboard";
-let currentType = "gasto"; // gasto | ingreso
-
-/***********************
- * Helpers
- ***********************/
-function formatARS(value) {
-  const n = Number(value || 0);
-  return n.toLocaleString("es-AR", { style: "currency", currency: "ARS" });
-}
-
-function todayMonthKey() {
-  const d = new Date();
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, "0");
-  return `${y}-${m}`;
-}
-
-function monthLabelEs(monthKey) {
-  const [y, m] = monthKey.split("-").map(Number);
-  const meses = [
-    "enero","febrero","marzo","abril","mayo","junio",
-    "julio","agosto","septiembre","octubre","noviembre","diciembre"
-  ];
-  return `${meses[m - 1]} de ${y}`;
-}
-
-function addMonthsToMonthKey(monthKey, add) {
-  const [y, m] = monthKey.split("-").map(Number);
-  const d = new Date(y, m - 1, 1);
-  d.setMonth(d.getMonth() + add);
-  const yy = d.getFullYear();
-  const mm = String(d.getMonth() + 1).padStart(2, "0");
-  return `${yy}-${mm}`;
-}
+const $ = (id) => document.getElementById(id);
 
 function uid() {
   if (typeof crypto !== "undefined" && crypto.randomUUID) return crypto.randomUUID();
   return "id-" + Math.random().toString(16).slice(2) + "-" + Date.now();
 }
 
+function parseMoney(value) {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : 0;
+}
+
+function formatARS(value) {
+  const n = Number(value) || 0;
+  return n.toLocaleString("es-AR", { style: "currency", currency: "ARS" });
+}
+
+function monthToLabel(ym) {
+  if (!ym || !/^\d{4}-\d{2}$/.test(ym)) return "—";
+  const [y, m] = ym.split("-").map(Number);
+  const d = new Date(y, m - 1, 1);
+  return d.toLocaleDateString("es-AR", { month: "long", year: "numeric" });
+}
+
+function addMonths(ym, add) {
+  const [y, m] = ym.split("-").map(Number);
+  const d = new Date(y, m - 1 + add, 1);
+  const yy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  return `${yy}-${mm}`;
+}
+
+function normalizeSelectedMonth() {
+  if (state.selectedMonth) return;
+  const now = new Date();
+  const y = now.getFullYear();
+  const m = String(now.getMonth() + 1).padStart(2, "0");
+  state.selectedMonth = `${y}-${m}`;
+}
+
+/** STORAGE */
 function loadMovements() {
+  const raw = localStorage.getItem(STORAGE_KEY);
+  if (!raw) return [];
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return [];
     const parsed = JSON.parse(raw);
-    if (!Array.isArray(parsed)) return [];
-    return parsed;
+    if (Array.isArray(parsed)) return parsed;
+    if (parsed && Array.isArray(parsed.movements)) return parsed.movements;
+    return [];
   } catch {
     return [];
   }
@@ -120,78 +93,39 @@ function saveMovements(list) {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(list));
 }
 
-function getSelectedMonthKey() {
-  const stored = localStorage.getItem(STORAGE_MONTH_KEY);
-  return monthInput.value || stored || todayMonthKey();
-}
-
-function setSelectedMonthKey(monthKey) {
-  monthInput.value = monthKey;
-  localStorage.setItem(STORAGE_MONTH_KEY, monthKey);
-}
-
-function sumByMonth(movements, monthKey, type) {
-  return movements
-    .filter(m => m.mesInicio === monthKey && m.tipo === type)
-    .reduce((acc, m) => acc + Number(m.monto || 0), 0);
-}
-
-function hasSalaryInMonth(movements, monthKey) {
-  return movements.some(m =>
-    m.tipo === "ingreso" &&
-    (m.categoria || "").toLowerCase() === "sueldo" &&
-    m.mesInicio === monthKey
-  );
-}
-
-function findLastKnownSalary(movements, upToMonthKey) {
-  const salaries = movements
-    .filter(m => m.tipo === "ingreso" && (m.categoria || "").toLowerCase() === "sueldo")
-    .slice();
-
-  if (!salaries.length) return 0;
-
-  salaries.sort((a, b) => (a.mesInicio > b.mesInicio ? 1 : a.mesInicio < b.mesInicio ? -1 : 0));
-
-  let last = 0;
-  for (const s of salaries) {
-    if (s.mesInicio <= upToMonthKey) last = Number(s.monto || 0);
-  }
-  return last;
-}
-
-/***********************
- * Seed (opcional)
- ***********************/
 function ensureSeed() {
-  const existing = loadMovements();
-  if (existing.length > 0) return;
-
   if (!ENABLE_SEED) return;
+  const current = loadMovements();
+  if (current.length > 0) return;
 
-  const mk = getSelectedMonthKey();
+  const nowMonth = state.selectedMonth || (() => {
+    const now = new Date();
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+  })();
 
   const seed = [
     {
       id: uid(),
-      tipo: "ingreso",
+      type: "income",
       descripcion: "Sueldo",
       monto: 250000,
-      mesInicio: mk,
+      mes: nowMonth,
       categoria: "Sueldo",
-      cuotas: null,
-      seriesId: null,
+      planId: null,
+      installmentIndex: null,
+      installmentsTotal: null,
       createdAt: Date.now(),
     },
     {
       id: uid(),
-      tipo: "gasto",
+      type: "expense",
       descripcion: "Supermercado",
       monto: 65000,
-      mesInicio: mk,
+      mes: nowMonth,
       categoria: "Consumo General",
-      cuotas: null,
-      seriesId: null,
+      planId: null,
+      installmentIndex: null,
+      installmentsTotal: null,
       createdAt: Date.now(),
     },
   ];
@@ -199,426 +133,639 @@ function ensureSeed() {
   saveMovements(seed);
 }
 
-/***********************
- * UI - Tabs / Views
- ***********************/
+/** HELPERS */
+function getMonthMovements(ym) {
+  return state.movements.filter(m => m.mes === ym);
+}
+
+function sumByType(list, type) {
+  return list
+    .filter(m => m.type === type)
+    .reduce((acc, m) => acc + (Number(m.monto) || 0), 0);
+}
+
+function buildMonthTotals(ym) {
+  const list = getMonthMovements(ym);
+  const income = sumByType(list, "income");
+  const expense = sumByType(list, "expense");
+  return { income, expense, balance: income - expense, count: list.length };
+}
+
+function groupByMonth(ymList) {
+  const map = new Map();
+  ymList.forEach(ym => map.set(ym, { ym, income: 0, expense: 0, balance: 0 }));
+
+  // Solo suma si el movimiento realmente pertenece a ese mes
+  for (const m of state.movements) {
+    if (!map.has(m.mes)) continue;
+    const row = map.get(m.mes);
+    const amt = Number(m.monto) || 0;
+    if (m.type === "income") row.income += amt;
+    if (m.type === "expense") row.expense += amt;
+  }
+
+  for (const row of map.values()) {
+    row.balance = row.income - row.expense;
+  }
+
+  return Array.from(map.values());
+}
+
+function initialsFromDesc(desc) {
+  const s = (desc || "").trim();
+  if (!s) return "•";
+  return s[0].toUpperCase();
+}
+
+/** UI VIEWS */
 function setView(view) {
-  currentView = view;
+  state.view = view;
 
-  if (view === "dashboard") {
-    tabDashboard.classList.add("active");
-    tabMonth.classList.remove("active");
-    viewDashboard.classList.remove("hidden");
-    viewMonth.classList.add("hidden");
+  $("viewDashboard").classList.toggle("hidden", view !== "dashboard");
+  $("viewMonth").classList.toggle("hidden", view !== "month");
+
+  $("tabDashboard").classList.toggle("active", view === "dashboard");
+  $("tabMonth").classList.toggle("active", view === "month");
+
+  $("tabDashboard").setAttribute("aria-selected", view === "dashboard" ? "true" : "false");
+  $("tabMonth").setAttribute("aria-selected", view === "month" ? "true" : "false");
+
+  render();
+}
+
+/** MODALS */
+function openOverlay(el) {
+  el.classList.remove("hidden");
+  document.body.style.overflow = "hidden";
+}
+function closeOverlay(el) {
+  el.classList.add("hidden");
+  document.body.style.overflow = "";
+}
+
+function resetMoveModal() {
+  editMode = false;
+  editId = null;
+
+  $("modalTitle").textContent = "Nuevo Movimiento";
+  $("btnSaveMovement").textContent = "Guardar Movimiento";
+
+  $("descInput").value = "";
+  $("amountInput").value = "";
+  $("installmentsInput").value = "1";
+  $("startMonthInput").value = state.selectedMonth;
+
+  setMoveType(state.moveType);
+  updateInstallmentsUI();
+
+  $("startMonthInput").disabled = false;
+  $("categorySelect").disabled = false;
+  $("installmentsInput").disabled = false;
+}
+
+function openMoveModal() {
+  resetMoveModal();
+  openOverlay($("overlayMove"));
+  setTimeout(() => $("descInput").focus(), 50);
+}
+
+function openEditModal(movement) {
+  editMode = true;
+  editId = movement.id;
+
+  $("modalTitle").textContent = "Editar Movimiento";
+  $("btnSaveMovement").textContent = "Guardar Cambios";
+
+  setMoveType(movement.type);
+
+  $("descInput").value = movement.descripcion || "";
+  $("amountInput").value = String(Number(movement.monto) || 0);
+  $("startMonthInput").value = movement.mes;
+  $("categorySelect").value = movement.categoria || (movement.type === "income" ? "Extra" : "Consumo General");
+
+  const isInstallment = Boolean(movement.planId && movement.installmentsTotal);
+
+  if (isInstallment) {
+    $("installmentsBlock").classList.add("hidden");
+    $("startMonthInput").disabled = true;
+    $("categorySelect").disabled = true;
+    $("installmentsInput").disabled = true;
   } else {
-    tabMonth.classList.add("active");
-    tabDashboard.classList.remove("active");
-    viewMonth.classList.remove("hidden");
-    viewDashboard.classList.add("hidden");
-  }
-}
-
-/***********************
- * Modal
- ***********************/
-function openModal() {
-  modalOverlay.classList.remove("hidden");
-  modalOverlay.setAttribute("aria-hidden", "false");
-
-  // Sync month
-  startMonthInput.value = getSelectedMonthKey();
-
-  // Default: gasto
-  setModalType(currentType);
-
-  // Reset basic fields
-  descInput.value = "";
-  amountInput.value = "";
-  installmentsInput.value = 1;
-
-  // focus
-  setTimeout(() => descInput.focus(), 50);
-}
-
-function closeModal() {
-  modalOverlay.classList.add("hidden");
-  modalOverlay.setAttribute("aria-hidden", "true");
-}
-
-function setModalType(type) {
-  currentType = type;
-
-  if (type === "gasto") {
-    modalTabExpense.classList.add("active");
-    modalTabIncome.classList.remove("active");
-    amountLabel.textContent = "Monto";
-  } else {
-    modalTabIncome.classList.add("active");
-    modalTabExpense.classList.remove("active");
-    amountLabel.textContent = "Monto";
+    $("startMonthInput").disabled = false;
+    $("categorySelect").disabled = false;
+    $("installmentsInput").disabled = false;
+    updateInstallmentsUI();
   }
 
-  // categories
-  renderCategoryOptions();
-  onCategoryChange(); // show/hide cuotas if needed
-  updateInstallmentsMath();
+  openOverlay($("overlayMove"));
+  setTimeout(() => $("descInput").focus(), 50);
 }
 
-function renderCategoryOptions() {
-  const list = (currentType === "ingreso") ? INCOME_CATEGORIES : EXPENSE_CATEGORIES;
-  categorySelect.innerHTML = "";
+function closeMoveModal() {
+  closeOverlay($("overlayMove"));
+}
 
-  for (const c of list) {
+/** MOVE TYPE + CATEGORIES */
+function setMoveType(type) {
+  state.moveType = type;
+
+  $("tabExpense").classList.toggle("active", type === "expense");
+  $("tabIncome").classList.toggle("active", type === "income");
+
+  $("tabExpense").setAttribute("aria-selected", type === "expense" ? "true" : "false");
+  $("tabIncome").setAttribute("aria-selected", type === "income" ? "true" : "false");
+
+  const sel = $("categorySelect");
+  sel.innerHTML = "";
+
+  const cats = type === "income" ? INCOME_CATEGORIES : EXPENSE_CATEGORIES;
+  for (const c of cats) {
     const opt = document.createElement("option");
     opt.value = c;
     opt.textContent = c;
-    categorySelect.appendChild(opt);
-  }
-}
-
-function categoryUsesInstallments(category) {
-  return category === "Tarjeta de Crédito" || category === "Préstamo Personal";
-}
-
-function onCategoryChange() {
-  const cat = categorySelect.value;
-  const show = (currentType === "gasto") && categoryUsesInstallments(cat);
-
-  installmentsBox.classList.toggle("hidden", !show);
-
-  // texto del hint
-  const mk = startMonthInput.value || getSelectedMonthKey();
-  const n = Number(installmentsInput.value || 1);
-  installmentsHint.textContent =
-    `El sistema generará automáticamente ${n} registros mensuales comenzando en ${mk}.`;
-
-  updateInstallmentsMath();
-}
-
-function updateInstallmentsMath() {
-  const val = Number(amountInput.value || 0);
-  const n = Number(installmentsInput.value || 1);
-  const total = val * n;
-
-  installmentsMath.textContent = `x ${formatARS(val)} = Total ${formatARS(total)}`;
-
-  const mk = startMonthInput.value || getSelectedMonthKey();
-  installmentsHint.textContent =
-    `El sistema generará automáticamente ${n} registros mensuales comenzando en ${mk}.`;
-}
-
-/***********************
- * Save movement
- ***********************/
-function createMovementBase() {
-  return {
-    tipo: currentType,
-    descripcion: descInput.value.trim(),
-    monto: Number(amountInput.value || 0),
-    mesInicio: startMonthInput.value,
-    categoria: categorySelect.value,
-    cuotas: null,
-    seriesId: null,
-    createdAt: Date.now(),
-  };
-}
-
-function saveMovement(e) {
-  e.preventDefault();
-
-  const base = createMovementBase();
-
-  if (!base.descripcion) return;
-
-  const list = loadMovements();
-
-  // Ingreso normal
-  if (base.tipo === "ingreso") {
-    list.push({ ...base, id: uid() });
-    saveMovements(list);
-    closeModal();
-    renderAll();
-    return;
+    sel.appendChild(opt);
   }
 
-  // Gasto
-  const uses = categoryUsesInstallments(base.categoria);
+  $("amountHint").textContent = (type === "income")
+    ? "Monto del ingreso"
+    : "Monto del gasto";
 
-  if (!uses) {
-    list.push({ ...base, id: uid() });
-    saveMovements(list);
-    closeModal();
-    renderAll();
-    return;
-  }
+  updateInstallmentsUI();
+}
 
-  // Gasto con cuotas (monto = valor de la cuota)
-  const n = Math.max(1, Number(installmentsInput.value || 1));
-  const seriesId = uid();
-  const start = base.mesInicio;
+function updateInstallmentsUI() {
+  const type = state.moveType;
+  const cat = $("categorySelect").value;
 
-  for (let i = 0; i < n; i++) {
-    const mk = addMonthsToMonthKey(start, i);
+  const shouldShow = (type === "expense") && INSTALLMENT_CATEGORIES.has(cat) && !editMode;
+  $("installmentsBlock").classList.toggle("hidden", !shouldShow);
+
+  const cuota = parseMoney($("amountInput").value);
+  const n = Math.max(1, parseInt($("installmentsInput").value || "1", 10));
+  $("installmentsMath").textContent = `x ${formatARS(cuota)} = Total ${formatARS(cuota * n)}`;
+
+  const start = $("startMonthInput").value || state.selectedMonth;
+  $("installmentsHint").textContent =
+    `El sistema generará automáticamente ${n} registros mensuales comenzando en ${start}.`;
+}
+
+/** CRUD */
+function addMovement({ type, descripcion, monto, mesInicio, categoria, cuotas }) {
+  const list = [...state.movements];
+
+  if (type === "expense" && INSTALLMENT_CATEGORIES.has(categoria) && cuotas && cuotas > 1) {
+    const planId = uid();
+    const cuotaValue = monto;
+
+    for (let i = 0; i < cuotas; i++) {
+      const ym = addMonths(mesInicio, i);
+      list.push({
+        id: uid(),
+        type,
+        descripcion,
+        monto: cuotaValue,
+        mes: ym,
+        categoria,
+        planId,
+        installmentIndex: i + 1,
+        installmentsTotal: cuotas,
+        createdAt: Date.now(),
+      });
+    }
+  } else {
     list.push({
-      ...base,
       id: uid(),
-      mesInicio: mk,
-      cuotas: n,
-      seriesId,
+      type,
+      descripcion,
+      monto,
+      mes: mesInicio,
+      categoria,
+      planId: null,
+      installmentIndex: null,
+      installmentsTotal: null,
+      createdAt: Date.now(),
     });
   }
 
-  saveMovements(list);
-  closeModal();
-  renderAll();
+  state.movements = list;
+  saveMovements(state.movements);
+  render();
 }
 
-/***********************
- * Delete movement
- ***********************/
-function deleteMovement(id, seriesId) {
-  const list = loadMovements();
+function updateMovement(id, patch) {
+  let changed = false;
+  state.movements = state.movements.map(m => {
+    if (m.id !== id) return m;
+    changed = true;
+    return {
+      ...m,
+      ...patch,
+      monto: Number(patch.monto ?? m.monto) || 0,
+      mes: String(patch.mes ?? m.mes),
+      descripcion: String(patch.descripcion ?? m.descripcion),
+      categoria: String(patch.categoria ?? m.categoria),
+    };
+  });
 
-  let next;
-  if (seriesId) {
-    const ok = confirm("Este movimiento pertenece a una serie de cuotas.\n¿Querés borrar TODA la serie?");
-    if (ok) {
-      next = list.filter(m => m.seriesId !== seriesId);
-    } else {
-      next = list.filter(m => m.id !== id);
-    }
-  } else {
-    const ok = confirm("¿Eliminar este movimiento?");
-    if (!ok) return;
-    next = list.filter(m => m.id !== id);
+  if (changed) {
+    saveMovements(state.movements);
+    render();
   }
-
-  saveMovements(next);
-  renderAll();
 }
 
-/***********************
- * Render: Dashboard + Mi Mes + Proyección
- ***********************/
+function deleteMovement(id) {
+  const before = state.movements.length;
+  state.movements = state.movements.filter(m => m.id !== id);
+  if (state.movements.length !== before) {
+    saveMovements(state.movements);
+    render();
+  }
+}
+
+/** RENDER */
 function renderHeader() {
-  const mk = getSelectedMonthKey();
-  heroMonthLabel.textContent = monthLabelEs(mk);
+  $("subtitleMonth").textContent = `Estado financiero para ${monthToLabel(state.selectedMonth)}`;
+  $("monthInput").value = state.selectedMonth;
+
+  // monthPretty (badge label)
+  $("monthPretty").textContent = monthToLabel(state.selectedMonth);
 }
 
 function renderDashboard() {
-  const mk = getSelectedMonthKey();
-  const movements = loadMovements();
+  const { income, expense, balance, count } = buildMonthTotals(state.selectedMonth);
 
-  const incomes = sumByMonth(movements, mk, "ingreso");
-  const expenses = sumByMonth(movements, mk, "gasto");
-  const remain = incomes - expenses;
+  $("kpiIncome").textContent = formatARS(income);
+  $("kpiExpense").textContent = formatARS(expense);
+  $("kpiBalance").textContent = formatARS(balance);
 
-  incomeValue.textContent = formatARS(incomes);
-  expenseValue.textContent = formatARS(expenses);
-  remainValue.textContent = formatARS(remain);
+  $("kpiPaid").textContent = "0";
+  $("kpiTotalOps").textContent = String(count);
 
-  // Pagados de X (usamos cantidad de gastos como proxy)
-  const expCount = movements.filter(m => m.mesInicio === mk && m.tipo === "gasto").length;
-  paidMeta.textContent = `0 pagados de ${expCount}`;
+  const months = Array.from({ length: 6 }, (_, i) => addMonths(state.selectedMonth, i));
+  const rows = groupByMonth(months);
 
-  renderProjection6Months();
+  const grid = $("projectionGrid");
+  grid.innerHTML = "";
+
+  for (const r of rows) {
+    const card = document.createElement("div");
+    card.className = "proj-card";
+
+    const title = document.createElement("div");
+    title.className = "proj-month";
+    title.textContent = monthToLabel(r.ym);
+
+    const row1 = document.createElement("div");
+    row1.className = "proj-row";
+    row1.innerHTML = `Ingresos <b>${formatARS(r.income)}</b>`;
+
+    const row2 = document.createElement("div");
+    row2.className = "proj-row";
+    row2.innerHTML = `Gastos <b>${formatARS(r.expense)}</b>`;
+
+    const left = document.createElement("div");
+    left.className = "proj-left";
+    left.innerHTML = `<span class="label">Te queda</span> <span>${formatARS(r.balance)}</span>`;
+
+    card.appendChild(title);
+    card.appendChild(row1);
+    card.appendChild(row2);
+    card.appendChild(left);
+
+    grid.appendChild(card);
+  }
 }
 
 function renderMonthView() {
-  const mk = getSelectedMonthKey();
-  const movements = loadMovements();
+  const list = getMonthMovements(state.selectedMonth);
 
-  const incomeItems = movements
-    .filter(m => m.mesInicio === mk && m.tipo === "ingreso")
-    .sort((a,b) => (b.createdAt || 0) - (a.createdAt || 0));
+  const incomes = list.filter(m => m.type === "income");
+  const expenses = list.filter(m => m.type === "expense");
 
-  const expenseItems = movements
-    .filter(m => m.mesInicio === mk && m.tipo === "gasto")
-    .sort((a,b) => (b.createdAt || 0) - (a.createdAt || 0));
+  const incTotal = incomes.reduce((a, m) => a + (Number(m.monto) || 0), 0);
+  const expTotal = expenses.reduce((a, m) => a + (Number(m.monto) || 0), 0);
 
-  const incTotal = incomeItems.reduce((acc, m) => acc + Number(m.monto || 0), 0);
-  const expTotal = expenseItems.reduce((acc, m) => acc + Number(m.monto || 0), 0);
+  $("monthIncomeTotal").textContent = formatARS(incTotal);
+  $("monthExpenseTotal").textContent = formatARS(expTotal);
 
-  monthIncomeTotal.textContent = formatARS(incTotal);
-  monthExpenseTotal.textContent = formatARS(expTotal);
+  // Incomes
+  const emptyIncome = $("emptyIncome");
+  const incomeList = $("incomeList");
+  incomeList.innerHTML = "";
 
-  // Ingresos panel
-  monthIncomeBody.innerHTML = "";
-  if (incomeItems.length === 0) {
-    const empty = document.createElement("div");
-    empty.className = "empty";
-    empty.textContent = "No hay ingresos registrados.";
-    empty.style.color = "var(--muted)";
-    empty.style.fontWeight = "800";
-    empty.style.padding = "4px 0 8px";
-    monthIncomeBody.appendChild(empty);
+  if (incomes.length === 0) {
+    emptyIncome.style.display = "block";
   } else {
-    for (const it of incomeItems) {
-      const el = document.createElement("div");
-      el.className = "item";
-      el.innerHTML = `
-        <div class="item-left">
-          <div class="item-title">${escapeHtml(it.descripcion)}</div>
-          <div class="item-meta">${escapeHtml(it.categoria)} · ${shortMonthLabel(mk)}</div>
-        </div>
-        <div class="item-right">
-          <div class="item-amount green">${formatARS(it.monto)}</div>
-          <button class="trash-btn" type="button" title="Eliminar">🗑️</button>
-        </div>
-      `;
-      el.querySelector(".trash-btn").addEventListener("click", () => deleteMovement(it.id, it.seriesId));
-      monthIncomeBody.appendChild(el);
+    emptyIncome.style.display = "none";
+    for (const m of incomes) {
+      incomeList.appendChild(renderIncomeItem(m));
     }
   }
 
-  // Gastos table
-  monthExpenseBody.innerHTML = "";
-  if (expenseItems.length === 0) {
-    const row = document.createElement("div");
-    row.className = "table-row";
-    row.innerHTML = `
-      <div class="cell-detail">
-        <div class="cell-meta">Todo limpio por aquí.</div>
-      </div>
-      <div class="right cell-meta"> </div>
-    `;
-    monthExpenseBody.appendChild(row);
+  // Expenses grouped by category
+  const emptyExpense = $("emptyExpense");
+  const groups = $("expenseGroups");
+  groups.innerHTML = "";
+
+  if (expenses.length === 0) {
+    emptyExpense.style.display = "block";
   } else {
-    for (const it of expenseItems) {
-      const row = document.createElement("div");
-      row.className = "table-row";
-      row.innerHTML = `
-        <div class="cell-detail">
-          <div class="cell-title">${escapeHtml(it.descripcion)}</div>
-          <div class="cell-meta">${escapeHtml(it.categoria)} · ${shortMonthLabel(mk)}</div>
-        </div>
-        <div class="right" style="display:flex; gap:10px; align-items:center; justify-content:flex-end;">
-          <div class="cell-amount">${formatARS(it.monto)}</div>
-          <button class="trash-btn" type="button" title="Eliminar">🗑️</button>
-        </div>
-      `;
-      row.querySelector(".trash-btn").addEventListener("click", () => deleteMovement(it.id, it.seriesId));
-      monthExpenseBody.appendChild(row);
+    emptyExpense.style.display = "none";
+
+    // group by category in defined order
+    const byCat = new Map(EXPENSE_CATEGORIES.map(c => [c, []]));
+    for (const e of expenses) {
+      const c = e.categoria || "Consumo General";
+      if (!byCat.has(c)) byCat.set(c, []);
+      byCat.get(c).push(e);
+    }
+
+    for (const cat of byCat.keys()) {
+      const arr = byCat.get(cat);
+      if (!arr || arr.length === 0) continue;
+
+      const totalCat = arr.reduce((a, m) => a + (Number(m.monto) || 0), 0);
+      groups.appendChild(renderExpenseGroup(cat, totalCat, arr));
     }
   }
 }
 
-function renderProjection6Months() {
-  const mk = getSelectedMonthKey();
-  const movements = loadMovements();
+function renderIncomeItem(m) {
+  const item = document.createElement("div");
+  item.className = "item";
 
-  const cards = Array.from(projectionGrid.querySelectorAll(".proj-card"));
-  if (cards.length < 6) return;
+  const left = document.createElement("div");
+  left.className = "item-left";
 
-  for (let i = 0; i < 6; i++) {
-    const mki = addMonthsToMonthKey(mk, i);
+  const av = document.createElement("div");
+  av.className = "avatar";
+  av.textContent = initialsFromDesc(m.descripcion);
 
-    const ingresosReales = sumByMonth(movements, mki, "ingreso");
+  const meta = document.createElement("div");
+  meta.className = "item-meta";
 
-    // sueldo proyectado si ese mes no tiene sueldo cargado
-    const sueldoExtra = hasSalaryInMonth(movements, mki) ? 0 : findLastKnownSalary(movements, mki);
-    const ingresosProyectados = ingresosReales + sueldoExtra;
+  const t = document.createElement("div");
+  t.className = "item-title";
+  t.textContent = m.descripcion || "(Sin descripción)";
 
-    const gastos = sumByMonth(movements, mki, "gasto");
+  const sub = document.createElement("div");
+  sub.className = "item-sub";
+  sub.textContent = `${m.categoria || "Ingreso"} · ${monthToLabel(m.mes)}`;
 
-    const neto = ingresosProyectados - gastos;
-    const netClass = neto >= 0 ? "positive" : "negative";
+  meta.appendChild(t);
+  meta.appendChild(sub);
 
-    cards[i].innerHTML = `
-      <div class="proj-month">${monthLabelEs(mki)}</div>
+  left.appendChild(av);
+  left.appendChild(meta);
 
-      <div class="proj-lines">
-        <div class="proj-row">
-          <span>Ingresos</span>
-          <strong>${formatARS(ingresosProyectados)}</strong>
-        </div>
-        <div class="proj-row">
-          <span>Gastos</span>
-          <strong>${formatARS(gastos)}</strong>
-        </div>
-      </div>
+  const right = document.createElement("div");
+  right.className = "item-right";
 
-      <div class="proj-net ${netClass}">
-        <span>Te queda</span>
-        <span>${formatARS(neto)}</span>
-      </div>
-    `;
-  }
+  const amt = document.createElement("div");
+  amt.className = "amount green";
+  amt.textContent = formatARS(m.monto);
+
+  const actions = document.createElement("div");
+  actions.className = "actionBtns";
+
+  const edit = document.createElement("button");
+  edit.className = "iconEdit";
+  edit.type = "button";
+  edit.title = "Editar";
+  edit.textContent = "✏️";
+  edit.addEventListener("click", () => openEditModal(m));
+
+  const del = document.createElement("button");
+  del.className = "iconTrash";
+  del.type = "button";
+  del.title = "Eliminar";
+  del.textContent = "🗑️";
+  del.addEventListener("click", () => {
+    const ok = confirm("¿Eliminar este ingreso?");
+    if (!ok) return;
+    deleteMovement(m.id);
+  });
+
+  actions.appendChild(edit);
+  actions.appendChild(del);
+
+  right.appendChild(amt);
+  right.appendChild(actions);
+
+  item.appendChild(left);
+  item.appendChild(right);
+
+  return item;
 }
 
-function renderAll() {
+function renderExpenseGroup(cat, totalCat, arr) {
+  const wrap = document.createElement("div");
+  wrap.className = "expenseGroup";
+
+  const head = document.createElement("div");
+  head.className = "expenseGroupHead";
+
+  const title = document.createElement("div");
+  title.className = "expenseGroupTitle";
+  title.textContent = cat;
+
+  const badge = document.createElement("div");
+  badge.className = "expenseGroupBadge";
+  badge.textContent = formatARS(totalCat);
+
+  head.appendChild(title);
+  head.appendChild(badge);
+
+  const tableWrap = document.createElement("div");
+  tableWrap.className = "tableWrap";
+  tableWrap.style.border = "0";
+  tableWrap.style.borderRadius = "0";
+
+  const table = document.createElement("table");
+  table.className = "table";
+
+  const thead = document.createElement("thead");
+  thead.innerHTML = `
+    <tr>
+      <th>DETALLE</th>
+      <th class="right">MONTO</th>
+      <th class="right" style="width:120px;">&nbsp;</th>
+    </tr>
+  `;
+
+  const tbody = document.createElement("tbody");
+
+  for (const m of arr) {
+    tbody.appendChild(renderExpenseRow(m));
+  }
+
+  table.appendChild(thead);
+  table.appendChild(tbody);
+  tableWrap.appendChild(table);
+
+  wrap.appendChild(head);
+  wrap.appendChild(tableWrap);
+
+  return wrap;
+}
+
+function renderExpenseRow(m) {
+  const tr = document.createElement("tr");
+
+  const td1 = document.createElement("td");
+  const title = document.createElement("div");
+  title.textContent = m.descripcion || "(Sin descripción)";
+
+  const sub = document.createElement("span");
+  sub.className = "small";
+  if (m.planId && m.installmentIndex && m.installmentsTotal) {
+    sub.textContent = `Cuota ${m.installmentIndex}/${m.installmentsTotal}`;
+  } else {
+    sub.textContent = m.categoria || "Gasto";
+  }
+
+  td1.appendChild(title);
+  td1.appendChild(sub);
+
+  const td2 = document.createElement("td");
+  td2.className = "right";
+  td2.textContent = formatARS(m.monto);
+
+  const td3 = document.createElement("td");
+  td3.className = "right";
+
+  const actions = document.createElement("div");
+  actions.className = "actionBtns";
+  actions.style.justifyContent = "flex-end";
+
+  const edit = document.createElement("button");
+  edit.className = "iconEdit";
+  edit.type = "button";
+  edit.title = "Editar";
+  edit.textContent = "✏️";
+  edit.addEventListener("click", () => openEditModal(m));
+
+  const del = document.createElement("button");
+  del.className = "iconTrash";
+  del.type = "button";
+  del.title = "Eliminar";
+  del.textContent = "🗑️";
+  del.addEventListener("click", () => {
+    const ok = confirm("¿Eliminar este gasto?");
+    if (!ok) return;
+    deleteMovement(m.id);
+  });
+
+  actions.appendChild(edit);
+  actions.appendChild(del);
+
+  td3.appendChild(actions);
+
+  tr.appendChild(td1);
+  tr.appendChild(td2);
+  tr.appendChild(td3);
+
+  return tr;
+}
+
+function render() {
   renderHeader();
   renderDashboard();
   renderMonthView();
 }
 
-/***********************
- * Small helpers UI
- ***********************/
-function shortMonthLabel(monthKey) {
-  // "Feb 2026"
-  const [y, m] = monthKey.split("-").map(Number);
-  const meses = ["Ene","Feb","Mar","Abr","May","Jun","Jul","Ago","Sep","Oct","Nov","Dic"];
-  return `${meses[m - 1]} ${y}`;
+/** EVENTS */
+function bindEvents() {
+  $("tabDashboard").addEventListener("click", () => setView("dashboard"));
+  $("tabMonth").addEventListener("click", () => setView("month"));
+
+  $("monthInput").addEventListener("change", (e) => {
+    state.selectedMonth = e.target.value;
+    $("startMonthInput").value = state.selectedMonth;
+    updateInstallmentsUI();
+    render();
+  });
+
+  $("btnOpenModal").addEventListener("click", openMoveModal);
+  $("fabOpenModal").addEventListener("click", openMoveModal);
+
+  $("btnCloseModal").addEventListener("click", closeMoveModal);
+  $("overlayMove").addEventListener("click", (e) => {
+    if (e.target.id === "overlayMove") closeMoveModal();
+  });
+
+  $("tabExpense").addEventListener("click", () => { editMode = false; setMoveType("expense"); });
+  $("tabIncome").addEventListener("click", () => { editMode = false; setMoveType("income"); });
+
+  $("categorySelect").addEventListener("change", updateInstallmentsUI);
+  $("amountInput").addEventListener("input", updateInstallmentsUI);
+  $("installmentsInput").addEventListener("input", updateInstallmentsUI);
+  $("startMonthInput").addEventListener("change", updateInstallmentsUI);
+
+  $("moveForm").addEventListener("submit", (e) => {
+    e.preventDefault();
+
+    const descripcion = $("descInput").value.trim();
+    const monto = parseMoney($("amountInput").value);
+    const mesInicio = $("startMonthInput").value || state.selectedMonth;
+    const categoria = $("categorySelect").value;
+
+    if (!descripcion) return alert("Poné una descripción.");
+    if (monto <= 0) return alert("El monto debe ser mayor a 0.");
+    if (!/^\d{4}-\d{2}$/.test(mesInicio)) return alert("Elegí un mes válido.");
+
+    // EDIT MODE
+    if (editMode && editId) {
+      updateMovement(editId, {
+        descripcion,
+        monto,
+        mes: mesInicio,
+        categoria,
+      });
+      closeMoveModal();
+      return;
+    }
+
+    // CREATE MODE
+    let cuotas = 1;
+    if (state.moveType === "expense" && INSTALLMENT_CATEGORIES.has(categoria)) {
+      cuotas = Math.max(1, parseInt($("installmentsInput").value || "1", 10));
+    }
+
+    addMovement({
+      type: state.moveType,
+      descripcion,
+      monto,
+      mesInicio,
+      categoria,
+      cuotas,
+    });
+
+    closeMoveModal();
+  });
+
+  $("btnImportPDF").addEventListener("click", () => {
+    alert("Importar PDF (UI): todavía sin parseo real.");
+  });
+
+  window.addEventListener("keydown", (e) => {
+    if (e.key !== "Escape") return;
+    if (!$("overlayMove").classList.contains("hidden")) closeMoveModal();
+  });
 }
 
-function escapeHtml(str) {
-  return String(str || "")
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#039;");
-}
-
-/***********************
- * Events
- ***********************/
-tabDashboard.addEventListener("click", () => setView("dashboard"));
-tabMonth.addEventListener("click", () => setView("month"));
-
-btnOpenModal.addEventListener("click", openModal);
-fabOpenModal.addEventListener("click", openModal);
-
-btnCloseModal.addEventListener("click", closeModal);
-modalOverlay.addEventListener("click", (e) => {
-  if (e.target === modalOverlay) closeModal();
-});
-document.addEventListener("keydown", (e) => {
-  if (e.key === "Escape" && !modalOverlay.classList.contains("hidden")) closeModal();
-});
-
-modalTabExpense.addEventListener("click", () => setModalType("gasto"));
-modalTabIncome.addEventListener("click", () => setModalType("ingreso"));
-
-categorySelect.addEventListener("change", onCategoryChange);
-amountInput.addEventListener("input", updateInstallmentsMath);
-installmentsInput.addEventListener("input", updateInstallmentsMath);
-startMonthInput.addEventListener("change", updateInstallmentsMath);
-
-movementForm.addEventListener("submit", saveMovement);
-
-monthInput.addEventListener("change", () => {
-  setSelectedMonthKey(monthInput.value);
-  renderAll();
-});
-
-document.getElementById("btnImportPdf").addEventListener("click", () => {
-  alert("Importar PDF: UI por ahora (sin parse real).");
-});
-
-/***********************
- * Init
- ***********************/
-(function init() {
-  const savedMonth = localStorage.getItem(STORAGE_MONTH_KEY) || todayMonthKey();
-  setSelectedMonthKey(savedMonth);
+/** INIT */
+function init() {
+  normalizeSelectedMonth();
+  $("monthInput").value = state.selectedMonth;
+  $("startMonthInput").value = state.selectedMonth;
 
   ensureSeed();
+  state.movements = loadMovements();
 
-  // inicializar categorías del modal
-  renderCategoryOptions();
-  onCategoryChange();
+  setMoveType("expense");
+  bindEvents();
+  render();
+}
 
-  renderAll();
-})();
+init();
